@@ -61,11 +61,16 @@ Copy the template configuration and customize if needed:
 cp .env.example .env
 ```
 Default keys are pre-configured:
+* `PORT_SERVICE_A=8000`, `PORT_SERVICE_B=8001`, `PORT_SERVICE_C=8002` (customizable service ports)
 * `CLIENT_API_KEY=test_client_key` (used by clients to call Service A)
 * `INTERNAL_API_KEY=test_internal_key` (used by Service C to call Service B)
 * `SIGNAL_API_KEY=test_signal_key` (used by Service A to call Service C)
 * `CACHE_TTL_SECONDS=300` (5-minute cache expiration)
-* `SERVICE_C_URL=http://localhost:8002` (used by Service A to locate Service C)
+* `SERVICE_B_URL=http://localhost:8001` (used locally by Service A and C to locate Service B)
+* `SERVICE_C_URL=http://localhost:8002` (used locally by Service A to locate Service C)
+
+> [!NOTE]
+> When running with **Docker Compose**, service ports and internal routing are dynamically resolved using the `PORT_SERVICE_*` variables defined in `.env`. If you customize these ports, Docker Compose will automatically configure the container ports, host mappings, and internal URLs accordingly.
 
 ---
 
