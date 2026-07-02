@@ -1,0 +1,102 @@
+# Objective
+
+Build a two-service Python backend that integrates with a public market-data API, exposes a REST API, and protects access with API key authentication.
+
+## 1. Business Scenario
+
+A client calls a REST API, authenticates with an API key, submits a stock or crypto asset symbol, and receives a normalized market snapshot assembled from a public API. The system is split into at least two Python services that communicate over REST.
+
+The task is focused on practical backend design, API integration, clean service boundaries, and basic but real access control.
+
+## 2. Required Components
+
+- At least two Python services.
+- A REST API for the client to call, and REST communication between backend services.
+- API key authentication protecting the public-facing endpoints.
+- Integration with at least one public API for market or financial data.
+- Clear documentation showing how to run the solution locally.
+
+## 3. Suggested Architecture
+
+- **Service A — API Gateway / Backend**: the main public service. It validates the API key, accepts requests, calls Service B, and returns the final response.
+- **Service B — Market Data Service**: a separate Python REST service responsible for calling the external public API, applying timeouts/retries, and normalizing external data into an internal schema.
+- **Optional Service C — Market Signal Service**: a separate Python service that produces a short rule-based market signal (e.g. bullish / neutral / bearish) derived from the fetched data.
+
+The minimum acceptable solution is Service A + Service B. Service C is optional.
+
+## 4. Public API Integration
+
+Use a public API that can provide asset or market data. The exact provider is up to the candidate, but the choice should be documented in the README.
+
+- Examples: a stock market API, a crypto market API, or another public market-data API.
+- Service B should own the external integration and should not expose raw upstream payloads directly to callers.
+- Normalize the external response into a stable internal response model.
+
+## 5. API and Data Flow
+
+- The client calls Service A, passing the API key as a bearer token in the `Authorization` header.
+- Service A validates the API key and exposes REST endpoints to the client.
+- Service A calls Service B over REST to fetch the requested market data.
+- Service B calls the public API, applies timeout/retry logic, maps the response to an internal schema, and returns it to Service A.
+- Service A returns the final response to the client.
+
+## 6. Authentication Requirements
+
+The goal is to validate that the candidate can implement straightforward, effective access control rather than to build a complex identity system.
+
+- All endpoints in Service A must require a valid API key supplied as a bearer token: `Authorization: Bearer <key>`.
+- Service A reads the expected key from an environment variable at startup and rejects any request that does not present a matching key with HTTP 401.
+- The API key must not be hardcoded. Store it in an environment variable or a config file that is excluded from source control.
+- Service-to-service calls from Service A to Service B may use the same mechanism or a separate internal key — the choice is up to the candidate.
+
+A simple, correct implementation is enough. The important part is that unprotected access is rejected and the key is not committed to the repository.
+
+## 7. Persistence and Caching
+
+Persistence is optional. The candidate may keep the solution stateless if they prefer.
+
+A database may be used for caching responses or tracking requests.
+- If implemented, lightweight options such as SQLite are perfectly acceptable.
+- A short cache TTL is acceptable to avoid repeated calls to the external API during local testing.
+
+## 8. Optional Market Signal Service
+
+This part is optional and should not block submission of a strong core solution.
+
+- Add a separate Python service or internal module that derives a short market signal from the fetched data.
+- The signal should be calculated using simple rules — for example, derive a bullish / neutral / bearish label from the percentage price change or recent price trend.
+- No external AI or LLM dependency is required. Pure Python logic is sufficient.
+- The signal output should be clearly labeled as a rule-based indicator, not as financial advice.
+
+A simple implementation is enough, for example: if 24h change > +2% → bullish, between −2% and +2% → neutral, below −2% → bearish.
+
+## 9. Deliverables
+
+- A Git repository with clear and incremental commit history.
+- A README with setup steps, environment variables, and exact run instructions.
+- Instructions for running all Python services.
+- Example API requests (`curl` examples or a Postman collection).
+- Docker Compose is recommended, but not mandatory.
+
+## 10. Evaluation Criteria
+
+- Clean separation of responsibilities between the two Python services.
+- Correct and straightforward API key authentication.
+- Quality of REST API design and inter-service communication.
+- Handling of external API integration, including resilience and response normalization.
+- Code quality, readability, and project structure.
+- Operational quality: documentation, local setup, configuration, and developer experience.
+- If implemented, whether the Market Signal service is clearly isolated and correctly documented.
+
+## 11. Practical Constraints
+
+- Target completion time: 8 – 12 hours.
+- The repository should show a clear commit history rather than a single final commit.
+- The solution should be runnable locally by following the provided documentation.
+
+## 12. Notes for the Candidate
+
+- Keep the scope practical. A smaller solution that runs well is better than a broader solution that is incomplete.
+- Service boundary design and response normalization matter more than advanced features.
+- The Market Signal service is optional and should only be added if the core architecture is already in good shape.
+- Choose a public market API that has a free tier and does not require complex registration — document your choice in the README.
