@@ -1,16 +1,17 @@
 # Active Context: FinAPI
 
 ## Current Focus
-Validating and running the three-service system containerized (Service A, B, and C) and verifying inter-service authorization rules.
+Validating and maintaining the primary-fallback data source provider architecture and composite SQLite cache on the `feature/eodhd-provider` branch.
 
 ## Recent Changes
-- Updated Service B database cache models and `yfinance` normalizer to support `previous_close`.
-- Developed Service C (Market Signal Service) to derive rule-based bullish/bearish/neutral sentiments.
-- Implemented `SIGNAL_API_KEY` auth layer protecting Service C endpoints.
-- Updated Service A (Gateway) to integrate the Service C client and expose public `/api/v1/market-signal`.
-- Orchestrated the 3-service stack in `docker-compose.yml` and documented local/Docker setups in `README.md`.
+- Created the new branch `feature/eodhd-provider`.
+- Added the `eodhd` library dependency and config variables (`PRIMARY_PROVIDER`, `FALLBACK_PROVIDER`, `EODHD_API_KEY`).
+- Refactored `MarketDataClient` to utilize the abstract `BaseMarketDataProvider` and implemented `YFinanceProvider`, `EodhdProvider`, and `FallbackProvider`.
+- Updated database cache logic with composite primary key `(symbol, provider)` to isolate cache data between providers.
+- Updated automated unit/integration tests and verified all tests pass (39 passing).
+- Verified container image building with `docker compose build`.
 
 ## Immediate Next Steps
-1. Rebuild and run container stack using Docker Compose.
-2. Conduct manual curl requests to verify the endpoint outputs and token restrictions.
-3. Update Memory Bank progress tracking.
+1. Conduct final manual testing of the fallback behavior with valid/invalid EODHD credentials.
+2. Commit the changes and merge `feature/eodhd-provider` back into `main`.
+

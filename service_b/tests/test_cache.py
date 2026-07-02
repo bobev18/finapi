@@ -13,11 +13,11 @@ def db_session_fixture():
         yield session
 
 def test_cache_get_miss(db_session):
-    cache_service = CacheService(session=db_session, ttl_seconds=60)
+    cache_service = CacheService(session=db_session, provider="yfinance", ttl_seconds=60)
     assert cache_service.get("AAPL") is None
 
 def test_cache_set_and_get_hit(db_session):
-    cache_service = CacheService(session=db_session, ttl_seconds=60)
+    cache_service = CacheService(session=db_session, provider="yfinance", ttl_seconds=60)
     
     snapshot = MarketSnapshot(
         symbol="AAPL",
@@ -44,7 +44,7 @@ def test_cache_set_and_get_hit(db_session):
 
 def test_cache_expiration(db_session):
     # Set TTL to 2 seconds
-    cache_service = CacheService(session=db_session, ttl_seconds=2)
+    cache_service = CacheService(session=db_session, provider="yfinance", ttl_seconds=2)
     
     snapshot = MarketSnapshot(
         symbol="AAPL",
@@ -60,7 +60,7 @@ def test_cache_expiration(db_session):
     assert cache_service.get("AAPL") is None
 
 def test_cache_overwrite(db_session):
-    cache_service = CacheService(session=db_session, ttl_seconds=60)
+    cache_service = CacheService(session=db_session, provider="yfinance", ttl_seconds=60)
     
     snapshot1 = MarketSnapshot(
         symbol="AAPL",
@@ -84,3 +84,38 @@ def test_cache_overwrite(db_session):
     assert cached is not None
     assert cached.price == 155.0
     assert cached.name == "Apple Inc. Updated"
+
+def test_cache_provider_isolation(db_session):
+    cache_yf = CacheService(session=db_session, provider="yfinance", ttl_seconds=60)
+    cache_eodhd = CacheService(session=db_session, provider="eodhd", ttl_seconds=60)
+    
+    snapshot_yf = MarketSnapshot(
+        symbol="AAPL",
+        name="Apple Inc. yf",
+        price=150.0,
+        currency="USD",
+        timestamp=time.time()
+    )
+    snapshot_eodhd = MarketSnapshot(
+        symbol="AAPL",
+        name="Apple Inc. eodhd",
+        price=152.0,
+        currency="USD",
+        timestamp=time.time()
+    )
+    
+    cache_yf.set(snapshot_yf)
+    cache_eodhd.set(snapshot_eodhd)
+    
+    # Verify we get the correct data scoped by provider
+    cached_yf = cache_yf.get("AAPL")
+    cached_eodhd = cache_eodhd.get("AAPL")
+    
+    assert cached_yf is not None
+    assert cached_yf.price == 150.0
+    assert cached_yf.name == "Apple Inc. yf"
+    
+    assert cached_eodhd is not None
+    assert cached_eodhd.price == 152.0
+    assert cached_eodhd.name == "Apple Inc. eodhd"
+

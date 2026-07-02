@@ -32,3 +32,9 @@
 - [x] Finalization
   - [x] Write setup instructions in README
   - [x] Commit all changes and push to GitHub
+- [x] EODHD Provider Integration
+  - [x] Create `feature/eodhd-provider` branch
+  - [x] Refactor Market Data Client to `YFinanceProvider`, `EodhdProvider`, and `FallbackProvider`
+  - [x] Implement composite caching key in database
+  - [x] Update tests and verify container builds
+

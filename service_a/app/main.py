@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, Query, Request, HTTPException, status
 from service_a.app.config import settings
-from service_a.app.services.service_b_client import service_b_client
-from service_a.app.services.service_c_client import service_c_client
+from service_a.app.services.service_b_client import service_b_client, UpstreamHTTPException as ServiceBHTTPException
+from service_a.app.services.service_c_client import service_c_client, UpstreamHTTPException as ServiceCHTTPException
 import logging
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,11 @@ def get_market_snapshot(
     try:
         snapshot = service_b_client.fetch_market_data(symbol)
         return snapshot
+    except ServiceBHTTPException as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=e.detail
+        )
     except Exception as e:
         logger.error(f"Error fetching market snapshot for {symbol}: {str(e)}")
         raise HTTPException(
@@ -64,6 +69,11 @@ def get_market_signal(
     try:
         signal = service_c_client.fetch_market_signal(symbol)
         return signal
+    except ServiceCHTTPException as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=e.detail
+        )
     except Exception as e:
         logger.error(f"Error fetching market signal for {symbol}: {str(e)}")
         raise HTTPException(

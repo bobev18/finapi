@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import FastAPI, Depends, Query, Request, HTTPException, status
 from pydantic import BaseModel, Field
 from service_c.app.config import settings
-from service_c.app.services.service_b_client import service_b_client
+from service_c.app.services.service_b_client import service_b_client, UpstreamHTTPException
 
 app = FastAPI(
     title="Service C - Market Signal Service",
@@ -56,6 +56,11 @@ def get_market_signal(
     """
     try:
         snapshot = service_b_client.fetch_market_data(symbol)
+    except UpstreamHTTPException as e:
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=e.detail
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
