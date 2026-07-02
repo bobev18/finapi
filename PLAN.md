@@ -83,3 +83,20 @@ graph TD
    - Commit 7: Service C development (rule-based signal calculations + Service B client).
    - Commit 8: Service A update to integrate Service C Client and market-signal endpoint.
    - Commit 9: Service orchestration via Docker Compose, env configs, and README updates.
+
+---
+
+## 4. Refinement & Hardening Tasks (Addressing Weaknesses)
+
+1. **Contract Enforcement / DTO Validation at Boundaries**:
+   - Share or duplicate the `MarketSnapshot` Pydantic model across services.
+   - Update service clients in `service_a` and `service_c` to deserialize and validate responses against the Pydantic schema, eliminating raw dictionary access.
+2. **SRP Alignment for Data Normalization**:
+   - Refactor `EodhdProvider` in `service_b` to use a dedicated normalizer function in `normalizer.py`, matching the SRP pattern of `YFinanceProvider`.
+3. **Resilience & Fault Tolerance Refinements**:
+   - Refactor retry logic in `service_b` providers to fail-fast on client-side errors (e.g., bypass retries when a ticker is invalid/not found, preventing 3-second latency penalties).
+   - Add a circuit breaker pattern or provider health state to dynamically bypass a failing primary provider when it is known to be offline.
+4. **Numeric Falsy Checking Bug Fixes**:
+   - Fix `normalizer.py` to use explicit `is not None` checks instead of Python `or` operators for numeric fields (e.g., `volume`, `high`, `low`, `open` where `0.0` is a valid number).
+5. **Dependency Isolation**:
+   - Separate the root `requirements.txt` into service-specific dependency files to optimize Docker build times and minimize container image footprint.

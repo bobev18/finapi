@@ -3,6 +3,7 @@ import httpx
 from unittest.mock import MagicMock, patch
 from service_a.app.services.service_b_client import ServiceBClient, UpstreamHTTPException as UpstreamHTTPExceptionB
 from service_a.app.services.service_c_client import ServiceCClient, UpstreamHTTPException as UpstreamHTTPExceptionC
+from service_a.app.schemas.market import MarketSnapshot
 
 @patch("service_a.app.services.service_b_client.httpx.Client")
 def test_service_b_client_success(mock_client_class):
@@ -12,13 +13,21 @@ def test_service_b_client_success(mock_client_class):
     
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {"symbol": "AAPL", "price": 150.0}
+    mock_response.json.return_value = {
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "price": 150.0,
+        "currency": "USD",
+        "timestamp": 1693941000.0
+    }
     mock_client.get.return_value = mock_response
     
     client = ServiceBClient(service_b_url="http://localhost:8001", internal_key="test_key")
     result = client.fetch_market_data("AAPL")
     
-    assert result == {"symbol": "AAPL", "price": 150.0}
+    assert isinstance(result, MarketSnapshot)
+    assert result.symbol == "AAPL"
+    assert result.price == 150.0
     mock_client.get.assert_called_once_with(
         "http://localhost:8001/internal/market-data",
         headers={"Authorization": "Bearer test_key"},

@@ -1,17 +1,20 @@
 # Active Context: FinAPI
 
 ## Current Focus
-Validating and maintaining the primary-fallback data source provider architecture and composite SQLite cache on the `feature/eodhd-provider` branch.
+Completed the Refinement & Hardening tasks for FinAPI to address core architectural weaknesses.
 
 ## Recent Changes
-- Created the new branch `feature/eodhd-provider`.
-- Added the `eodhd` library dependency and config variables (`PRIMARY_PROVIDER`, `FALLBACK_PROVIDER`, `EODHD_API_KEY`).
-- Refactored `MarketDataClient` to utilize the abstract `BaseMarketDataProvider` and implemented `YFinanceProvider`, `EodhdProvider`, and `FallbackProvider`.
-- Updated database cache logic with composite primary key `(symbol, provider)` to isolate cache data between providers.
-- Updated automated unit/integration tests and verified all tests pass (39 passing).
-- Verified container image building with `docker compose build`.
+- Implemented boundary DTO validation: created `MarketSnapshot` schemas in `service_a` and `service_c` and updated service clients to deserialize and validate REST payloads against these models.
+- Refactored `EodhdProvider` normalization logic to `normalize_eodhd_data` in `normalizer.py`.
+- Fixed numeric falsy checking bug in `normalizer.py` using explicit `is not None` checks.
+- Refactored retry logic to fail-fast on client-side errors (invalid symbols/validation errors) in `YFinanceProvider` and `EodhdProvider`.
+- Implemented an OOP thread-safe `CircuitBreaker` pattern in `FallbackProvider` to bypass primary provider during offline states.
+- Optimised Docker container weight and build speeds by isolating root dependencies into service-specific `requirements.txt` files.
+- Updated the automated test suite (all 69 tests pass) and verified successful container image builds via `docker compose build`.
 
 ## Immediate Next Steps
-1. Conduct final manual testing of the fallback behavior with valid/invalid EODHD credentials.
-2. Commit the changes and merge `feature/eodhd-provider` back into `main`.
+1. Push all implemented Refinement & Hardening changes to the repository.
+2. Conduct any extra end-to-end integration manual tests.
+3. Align on any new feature additions with the user.
+
 

@@ -1,5 +1,6 @@
 import httpx
 from service_a.app.config import settings
+from service_a.app.schemas.market import MarketSnapshot
 
 class UpstreamHTTPException(Exception):
     def __init__(self, status_code: int, detail: str):
@@ -15,7 +16,7 @@ class ServiceBClient:
         self._service_b_url = service_b_url
         self._internal_key = internal_key
 
-    def fetch_market_data(self, symbol: str) -> dict:
+    def fetch_market_data(self, symbol: str) -> MarketSnapshot:
         """
         Queries Service B for the market snapshot of a given symbol.
         Propagates custom exceptions on HTTP or communication failures.
@@ -30,7 +31,7 @@ class ServiceBClient:
                 response = client.get(url, headers=headers, params=params)
                 
                 if response.status_code == 200:
-                    return response.json()
+                    return MarketSnapshot.model_validate(response.json())
                 else:
                     try:
                         detail = response.json().get("detail", response.text)

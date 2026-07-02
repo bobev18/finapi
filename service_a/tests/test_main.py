@@ -29,6 +29,8 @@ def test_gateway_missing_symbol(client):
     )
     assert response.status_code == 422
 
+from service_a.app.schemas.market import MarketSnapshot
+
 @patch("service_a.app.main.service_b_client")
 def test_gateway_forwarding_success(mock_service_b_client, client):
     # Mock successful response from Service B client
@@ -42,9 +44,11 @@ def test_gateway_forwarding_success(mock_service_b_client, client):
         "open": 174.50,
         "volume": 52000000.0,
         "market_cap": 2700000000000.0,
-        "timestamp": 1700000000.0
+        "previous_close": None,
+        "timestamp": 1700000000.0,
+        "provider": None
     }
-    mock_service_b_client.fetch_market_data.return_value = mock_data
+    mock_service_b_client.fetch_market_data.return_value = MarketSnapshot(**mock_data)
     
     response = client.get(
         "/api/v1/market-snapshot?symbol=AAPL",

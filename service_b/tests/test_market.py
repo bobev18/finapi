@@ -253,3 +253,107 @@ def test_eodhd_provider_exhausted_retries(mock_client_class):
     with pytest.raises(UpstreamAPIError, match="Failed to fetch market data from EODHD"):
         provider.fetch_snapshot("AAPL")
 
+
+# ==========================================
+# Resilience, Fail-Fast & Circuit Breaker Tests
+# ==========================================
+
+@patch("service_b.app.services.market_data.yf.Ticker")
+def test_yfinance_provider_fail_fast_on_client_error(mock_ticker_class):
+    mock_ticker = MagicMock()
+    mock_ticker.info = {}  # Trigger ValueError -> client error
+    mock_ticker_class.return_value = mock_ticker
+    
+    provider = YFinanceProvider(retries=3, delay_seconds=0.01)
+    
+    with pytest.raises(UpstreamAPIError) as exc_info:
+        provider.fetch_snapshot("INVALID")
+        
+    assert exc_info.value.is_client_error is True
+    # Verify it failed on the very first attempt and did not retry
+    assert mock_ticker_class.call_count == 1
+
+
+@patch("service_b.app.services.market_data.APIClient")
+def test_eodhd_provider_fail_fast_on_client_error(mock_client_class):
+    mock_client = MagicMock()
+    mock_client.get_live_stock_prices.return_value = None  # Trigger ValueError -> client error
+    mock_client_class.return_value = mock_client
+    
+    provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
+    
+    with pytest.raises(UpstreamAPIError) as exc_info:
+        provider.fetch_snapshot("INVALID")
+        
+    assert exc_info.value.is_client_error is True
+    # Verify it failed on the very first attempt and did not retry
+    assert mock_client.get_live_stock_prices.call_count == 1
+
+
+def test_circuit_breaker_transitions():
+    from service_b.app.services.market_data import CircuitBreaker, CircuitState
+    
+    # 1. Closed state initially
+    cb = CircuitBreaker(failure_threshold=2, recovery_timeout=0.05)
+    assert cb.state == CircuitState.CLOSED
+    assert cb.allow_request() is True
+    
+    # 2. Transition to OPEN on failures
+    cb.record_failure()
+    assert cb.state == CircuitState.CLOSED
+    cb.record_failure()
+    assert cb.state == CircuitState.OPEN
+    assert cb.allow_request() is False
+    
+    # 3. Transition to HALF_OPEN after recovery timeout
+    time.sleep(0.06)
+    assert cb.state == CircuitState.HALF_OPEN
+    assert cb.allow_request() is True
+    
+    # 4. Reset to CLOSED on success
+    cb.record_success()
+    assert cb.state == CircuitState.CLOSED
+    assert cb.allow_request() is True
+
+
+def test_fallback_provider_circuit_breaker_behavior():
+    mock_primary = MagicMock()
+    mock_fallback = MagicMock()
+    
+    # Setup primary to fail with a network error
+    mock_primary.fetch_snapshot.side_effect = Exception("Primary offline")
+    
+    # Setup fallback to succeed
+    mock_snapshot = MarketSnapshot(
+        symbol="AAPL",
+        name="Apple Inc.",
+        price=175.50,
+        currency="USD",
+        timestamp=time.time()
+    )
+    mock_fallback.fetch_snapshot.return_value = mock_snapshot
+    
+    # Instantiate with a low threshold
+    provider = FallbackProvider(
+        primary=mock_primary,
+        fallback=mock_fallback,
+        failure_threshold=2,
+        recovery_timeout=30.0
+    )
+    
+    # 1. First request: primary is tried, fails, fallback succeeds
+    res1 = provider.fetch_snapshot("AAPL")
+    assert res1 == mock_snapshot
+    assert mock_primary.fetch_snapshot.call_count == 1
+    
+    # 2. Second request: primary is tried, fails, fallback succeeds, trips CB
+    res2 = provider.fetch_snapshot("AAPL")
+    assert res2 == mock_snapshot
+    assert mock_primary.fetch_snapshot.call_count == 2
+    
+    # 3. Third request: CB is OPEN, primary is bypassed, fallback called directly
+    res3 = provider.fetch_snapshot("AAPL")
+    assert res3 == mock_snapshot
+    # Primary call count remains at 2!
+    assert mock_primary.fetch_snapshot.call_count == 2
+

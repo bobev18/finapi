@@ -108,8 +108,10 @@ If you prefer running the services directly in your local environment:
    Ensure `uv` is installed, then run:
    ```bash
    uv venv
+   # Install all dependencies for local workspace development
    uv pip install -r requirements.txt
    ```
+   *Note: For Docker builds, dependencies are isolated into service-specific `requirements.txt` files inside each service folder.*
 
 2. **Start Service B (Market Data)**:
    ```bash
@@ -137,6 +139,7 @@ If you prefer running the services directly in your local environment:
    $env:CLIENT_API_KEY="test_client_key"
    $env:SIGNAL_API_KEY="test_signal_key"
    $env:SERVICE_C_URL="http://localhost:8002"
+   $env:SERVICE_B_URL="http://localhost:8001"
    uv run uvicorn service_a.app.main:app --port 8000
    ```
 ---
@@ -161,7 +164,7 @@ If you prefer running the services directly in your local environment:
     uv run uvicorn service_b.app.main:app --port 8001
     uv run uvicorn service_a.app.main:app --port 8000
     ```
-  * If dependencies in [requirements.txt](file:///d:/gits/finapi/requirements.txt) have changed, re-install them first:
+  * If dependencies in any service-specific `requirements.txt` (or the root `requirements.txt`) have changed, re-install them first:
     ```bash
     uv pip install -r requirements.txt
     ```

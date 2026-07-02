@@ -67,9 +67,9 @@ def get_market_signal(
             detail=f"Gateway routing error to Service B: {str(e)}"
         )
     
-    price = snapshot.get("price")
-    open_price = snapshot.get("open")
-    previous_close = snapshot.get("previous_close")
+    price = snapshot.price
+    open_price = snapshot.open
+    previous_close = snapshot.previous_close
     
     if price is None:
         raise HTTPException(

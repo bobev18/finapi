@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, Query, Request, HTTPException, status
 from service_a.app.config import settings
+from service_a.app.schemas.market import MarketSnapshot
 from service_a.app.services.service_b_client import service_b_client, UpstreamHTTPException as ServiceBHTTPException
 from service_a.app.services.service_c_client import service_c_client, UpstreamHTTPException as ServiceCHTTPException
 import logging
@@ -31,6 +32,7 @@ def verify_client_token(request: Request):
 
 @app.get(
     "/api/v1/market-snapshot",
+    response_model=MarketSnapshot,
     dependencies=[Depends(verify_client_token)]
 )
 def get_market_snapshot(

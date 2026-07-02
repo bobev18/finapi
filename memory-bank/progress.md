@@ -37,4 +37,10 @@
   - [x] Refactor Market Data Client to `YFinanceProvider`, `EodhdProvider`, and `FallbackProvider`
   - [x] Implement composite caching key in database
   - [x] Update tests and verify container builds
-
+- [x] Refinement & Hardening
+  - [x] Implement DTO validation/contract enforcement at boundaries
+  - [x] Refactor EODHD provider normalization to dedicated normalizer function
+  - [x] Implement fail-fast on client errors (invalid tickers) to avoid unnecessary retries
+  - [x] Implement OOP CircuitBreaker pattern inside FallbackProvider
+  - [x] Fix numeric falsy check operators in normalizer.py using explicit is not None
+  - [x] Optimize Docker build times with service-specific isolated dependency files
