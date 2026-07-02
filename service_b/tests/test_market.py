@@ -181,3 +181,75 @@ def test_fallback_provider_both_fail():
     
     with pytest.raises(Exception, match="Fallback offline"):
         provider.fetch_snapshot("AAPL")
+
+
+# ==========================================
+# Provider Error Cases & Retry Tests
+# ==========================================
+
+@patch("service_b.app.services.market_data.yf.Ticker")
+def test_yfinance_provider_invalid_data(mock_ticker_class):
+    mock_ticker = MagicMock()
+    mock_ticker.info = {}
+    mock_ticker_class.return_value = mock_ticker
+    
+    provider = YFinanceProvider(retries=1, delay_seconds=0.01)
+    with pytest.raises(UpstreamAPIError, match="Upstream returned empty or invalid info dict"):
+        provider.fetch_snapshot("AAPL")
+
+
+@patch("service_b.app.services.market_data.APIClient")
+def test_eodhd_provider_empty_data(mock_client_class):
+    mock_client = MagicMock()
+    mock_client.get_live_stock_prices.return_value = None
+    mock_client_class.return_value = mock_client
+    
+    provider = EodhdProvider(api_key="fake_key", retries=1, delay_seconds=0.01)
+    with pytest.raises(UpstreamAPIError, match="EODHD returned empty or invalid data"):
+        provider.fetch_snapshot("AAPL")
+
+
+@patch("service_b.app.services.market_data.APIClient")
+def test_eodhd_provider_missing_close_price(mock_client_class):
+    mock_client = MagicMock()
+    mock_client.get_live_stock_prices.return_value = {
+        "code": "AAPL.US",
+        "open": 174.50
+    }
+    mock_client_class.return_value = mock_client
+    
+    provider = EodhdProvider(api_key="fake_key", retries=1, delay_seconds=0.01)
+    with pytest.raises(UpstreamAPIError, match="Could not find close price in EODHD response"):
+        provider.fetch_snapshot("AAPL")
+
+
+@patch("service_b.app.services.market_data.APIClient")
+def test_eodhd_provider_retry_behavior(mock_client_class):
+    mock_client = MagicMock()
+    mock_client.get_live_stock_prices.side_effect = [
+        Exception("Timeout"),
+        Exception("Timeout"),
+        {
+            "code": "AAPL.US",
+            "close": 175.50
+        }
+    ]
+    mock_client_class.return_value = mock_client
+    
+    provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
+    snapshot = provider.fetch_snapshot("AAPL")
+    
+    assert snapshot.price == 175.50
+    assert mock_client.get_live_stock_prices.call_count == 3
+
+
+@patch("service_b.app.services.market_data.APIClient")
+def test_eodhd_provider_exhausted_retries(mock_client_class):
+    mock_client = MagicMock()
+    mock_client.get_live_stock_prices.side_effect = Exception("EODHD offline")
+    mock_client_class.return_value = mock_client
+    
+    provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
+    with pytest.raises(UpstreamAPIError, match="Failed to fetch market data from EODHD"):
+        provider.fetch_snapshot("AAPL")
+

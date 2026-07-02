@@ -218,3 +218,27 @@ def test_get_market_data_fallback_cache_hit(mock_market_client, client, db_sessi
         mock_market_client.fetch_snapshot.assert_not_called()
 
 
+def test_get_db_session_yield():
+    from service_b.app.main import get_db_session
+    from sqlmodel import Session, create_engine
+    
+    test_engine = create_engine("sqlite:///:memory:")
+    with patch("service_b.app.main.engine", test_engine):
+        db_gen = get_db_session()
+        session = next(db_gen)
+        assert isinstance(session, Session)
+        try:
+            next(db_gen)
+        except StopIteration:
+            pass
+
+
+def test_get_market_provider_invalid():
+    from service_b.app.main import get_market_provider
+    with patch("service_b.app.main.settings") as mock_settings:
+        mock_settings.primary_provider = "invalid_provider"
+        mock_settings.fallback_provider = "none"
+        with pytest.raises(ValueError, match="Unknown market data provider: invalid_provider"):
+            get_market_provider()
+
+
