@@ -115,13 +115,13 @@ def get_market_data(
         cache_service.set(snapshot, provider=snapshot.provider)
         return snapshot
     except UpstreamAPIError as e:
-        err_msg = str(e)
-        if "Could not find price" in err_msg or "could not convert string to float: 'NA'" in err_msg:
+        if e.is_client_error:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Symbol not found at provider"
             )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Upstream API failure: {err_msg}"
+            detail=f"Upstream API failure: {str(e)}"
         )
+

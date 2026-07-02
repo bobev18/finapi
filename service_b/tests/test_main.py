@@ -129,7 +129,9 @@ def test_get_market_data_upstream_failure(mock_market_client, client):
 
 @patch("service_b.app.main.market_client")
 def test_get_market_data_symbol_not_found(mock_market_client, client):
-    mock_market_client.fetch_snapshot.side_effect = UpstreamAPIError("Could not find price in raw ticker info")
+    mock_market_client.fetch_snapshot.side_effect = UpstreamAPIError(
+        "Could not find price in raw ticker info", is_client_error=True
+    )
     
     response = client.get(
         "/internal/market-data?symbol=INVALID",
@@ -138,6 +140,7 @@ def test_get_market_data_symbol_not_found(mock_market_client, client):
     
     assert response.status_code == 404
     assert "Symbol not found at provider" in response.json()["detail"]
+
 
 
 

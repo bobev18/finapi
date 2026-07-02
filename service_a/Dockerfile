@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY service_a/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy service code
+# Copy shared schemas package and service code
+COPY shared/ /app/shared/
 COPY service_a/ /app/service_a/
 
 # Set Python path to find the packages
