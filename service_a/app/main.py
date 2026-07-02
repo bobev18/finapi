@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, Query, Request, HTTPException, status
 from service_a.app.config import settings
 from service_a.app.services.service_b_client import service_b_client
+from service_a.app.services.service_c_client import service_c_client
 
 app = FastAPI(
     title="Service A - API Gateway / Backend",
@@ -39,6 +40,26 @@ def get_market_snapshot(
     try:
         snapshot = service_b_client.fetch_market_data(symbol)
         return snapshot
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Gateway routing error: {str(e)}"
+        )
+
+@app.get(
+    "/api/v1/market-signal",
+    dependencies=[Depends(verify_client_token)]
+)
+def get_market_signal(
+    symbol: str = Query(..., min_length=1, description="Ticker symbol to fetch market signal for")
+):
+    """
+    Public endpoint to retrieve derived rule-based market signals.
+    Validates client credentials and proxies requests to Service C.
+    """
+    try:
+        signal = service_c_client.fetch_market_signal(symbol)
+        return signal
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

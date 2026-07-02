@@ -67,3 +67,40 @@ def test_gateway_forwarding_failure(mock_service_b_client, client):
     
     assert response.status_code == 502
     assert "Service B connection failed" in response.json()["detail"]
+
+def test_gateway_signal_unauthorized(client):
+    response = client.get("/api/v1/market-signal?symbol=AAPL")
+    assert response.status_code == 401
+
+@patch("service_a.app.main.service_c_client")
+def test_gateway_signal_success(mock_service_c_client, client):
+    mock_signal_data = {
+        "symbol": "AAPL",
+        "signal": "bullish",
+        "change_percent": 3.0,
+        "indicator_type": "rule-based",
+        "disclaimer": "Disclaimer info",
+        "timestamp": 1700000000.0
+    }
+    mock_service_c_client.fetch_market_signal.return_value = mock_signal_data
+    
+    response = client.get(
+        "/api/v1/market-signal?symbol=AAPL",
+        headers={"Authorization": f"Bearer {settings.client_api_key}"}
+    )
+    
+    assert response.status_code == 200
+    assert response.json() == mock_signal_data
+    mock_service_c_client.fetch_market_signal.assert_called_once_with("AAPL")
+
+@patch("service_a.app.main.service_c_client")
+def test_gateway_signal_failure(mock_service_c_client, client):
+    mock_service_c_client.fetch_market_signal.side_effect = Exception("Service C connection failed")
+    
+    response = client.get(
+        "/api/v1/market-signal?symbol=AAPL",
+        headers={"Authorization": f"Bearer {settings.client_api_key}"}
+    )
+    
+    assert response.status_code == 502
+    assert "Service C connection failed" in response.json()["detail"]
