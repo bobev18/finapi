@@ -4,7 +4,7 @@
 Setting up the project scaffolding, preparing files for the initial implementation of the two services (Service A & Service B).
 
 ## Recent Changes
-- Created local repository, configured credentials (`bobev18`, `bobev18@gmail.com`), and successfully pushed to GitHub.
+- Created local repository, configured credentials, and successfully pushed to GitHub.
 - Created `PLAN.md` and `.gitignore`.
 - Initialized the memory bank files:
   - `productContext.md` (Business & product goals)

@@ -28,8 +28,8 @@ This document logs significant architectural and configuration decisions.
 
 ## 3. Git Identity Configuration (Local)
 - **Status**: Decided & Implemented
-- **Context**: The user wanted commits pushed under the identity `bobev18@gmail.com` with user name `bobev18`.
-- **Decision**: Set the Git configurations locally (`git config user.name "bobev18"` and `git config user.email "bobev18@gmail.com"`).
+- **Context**: The user wanted commits pushed under the identity with user name `bobev18`.
+- **Decision**: Set the Git configurations locally
 - **Consequences**:
   - Global system settings remain unaffected.
   - All future commits in this project will correctly attribute to the user.
