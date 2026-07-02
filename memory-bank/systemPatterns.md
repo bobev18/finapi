@@ -14,24 +14,30 @@ This document describes the architectural layout, core technical stack, and desi
 
 ```mermaid
 graph TD
-    Client[Client / Consumer] -->|REST + Bearer token| ServiceA(Service A: API Gateway)
-    ServiceA -->|REST + Internal Bearer token| ServiceB(Service B: Market Data Service)
+    Client[Client / Consumer] -->|REST + Bearer Client Key| ServiceA(Service A: API Gateway)
+    ServiceA -->|REST + Bearer Signal Key| ServiceC(Service C: Market Signal Service)
+    ServiceC -->|REST + Bearer Internal Key| ServiceB(Service B: Market Data Service)
     ServiceB -->|yfinance / external API| PublicAPI(Public Market API)
     ServiceB -->|Read/Write| CacheDB[(SQLite Cache DB)]
 ```
 
 ### Clean Service Separation
 1. **Service A (Gateway)**:
-   - Exposes public-facing endpoints (e.g., `/api/v1/market-snapshot`).
+   - Exposes public-facing endpoints (e.g., `/api/v1/market-snapshot`, `/api/v1/market-signal`).
    - Validates client credentials.
-   - Forwards valid requests to Service B.
-   - Does not have direct access to the database or external `yfinance` libraries.
-2. **Service B (Market Data Service)**:
-   - Exposes internal endpoints.
-   - Validates internal service credentials from Service A.
+   - Forwards requests to Service B (for data) or Service C (for signals).
+   - Shields internal services from direct public access.
+2. **Service C (Market Signal Service)**:
+   - Exposes internal `/internal/market-signal` endpoint.
+   - Validates signal token from Service A.
+   - Queries Service B to fetch market snapshots.
+   - Applies rule-based pricing changes to derive bullish/bearish/neutral signals.
+3. **Service B (Market Data Service)**:
+   - Exposes internal `/internal/market-data` endpoint.
+   - Validates internal service credentials from Service C or Service A.
    - Calls `yfinance` to fetch stock or crypto data.
-   - Handles data caching in a local SQLite file.
-   - Normalizes raw payloads into a clean internal data transfer object (DTO).
+   - Handles cache read/writes in SQLite database with a configurable TTL.
+   - Normalizes raw payloads into a clean `MarketSnapshot` DTO including previous close.
 
 ## Design & Code Patterns
 - **SOLID Principles**: Each class/endpoint has a single responsibility. Interfaces represent abstract data fetches.

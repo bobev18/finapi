@@ -8,23 +8,27 @@
   - [x] Create GitHub remote repository
   - [x] Push initial plan and `.gitignore` to GitHub
   - [x] Setup Memory Bank
-- [ ] Base Configuration & Scaffolding
-  - [ ] Create `service_a` and `service_b` directories
-  - [ ] Set up environment files (`.env`, `.env.example`)
-  - [ ] Configure `uv` virtual environments and dependencies
-- [ ] Service B: Market Data Service
-  - [ ] Test & implement `yfinance` integration
-  - [ ] Test & implement response normalization (DTOs)
-  - [ ] Test & implement SQLite cache & TTL checks
-  - [ ] Write resilience wrapper (timeouts, retries)
-- [ ] Service A: API Gateway
-  - [ ] Test & implement API Key Bearer authentication
-  - [ ] Test & implement HTTP client to fetch from Service B
-  - [ ] Expose normalized public endpoint
-- [ ] Containerization & Integration
-  - [ ] Create individual Dockerfiles
-  - [ ] Orchestrate via `docker-compose.yml`
-  - [ ] Conduct end-to-end local validation
-- [ ] Finalization
-  - [ ] Write setup instructions in README
-  - [ ] Commit all changes and push to GitHub
+- [x] Base Configuration & Scaffolding
+  - [x] Create `service_a` and `service_b` directories
+  - [x] Set up environment files (`.env`, `.env.example`)
+  - [x] Configure `uv` virtual environments and dependencies
+- [x] Service B: Market Data Service
+  - [x] Test & implement `yfinance` integration
+  - [x] Test & implement response normalization (DTOs)
+  - [x] Test & implement SQLite cache & TTL checks
+  - [x] Write resilience wrapper (timeouts, retries)
+- [x] Service A: API Gateway
+  - [x] Test & implement API Key Bearer authentication
+  - [x] Test & implement HTTP client to fetch from Service B
+  - [x] Expose normalized public endpoint
+- [x] Service C: Market Signal Service
+  - [x] Test & implement Service B HTTP Client in Service C
+  - [x] Test & implement sentiment signal calculation logic
+  - [x] Expose internal token-protected market signal endpoint
+- [x] Containerization & Integration
+  - [x] Create individual Dockerfiles
+  - [x] Orchestrate via `docker-compose.yml`
+  - [x] Conduct end-to-end local validation
+- [x] Finalization
+  - [x] Write setup instructions in README
+  - [x] Commit all changes and push to GitHub
