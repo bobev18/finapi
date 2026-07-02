@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  service_b:
+    build:
+      context: .
+      dockerfile: service_b/Dockerfile
+    container_name: service_b
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-test_internal_key}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
+      - DATABASE_URL=sqlite:////app/data/market_cache.db
+    volumes:
+      - cache_data:/app/data
+
+  service_a:
+    build:
+      context: .
+      dockerfile: service_a/Dockerfile
+    container_name: service_a
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - CLIENT_API_KEY=${CLIENT_API_KEY:-test_client_key}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-test_internal_key}
+      - SERVICE_B_URL=http://service_b:8001
+    depends_on:
+      - service_b
+
+volumes:
+  cache_data:
