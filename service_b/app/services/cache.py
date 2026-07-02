@@ -10,6 +10,7 @@ class CachedSnapshot(SQLModel, table=True):
     __tablename__ = "market_cache"  # type: ignore
     
     symbol: str = Field(primary_key=True)
+    provider: str = Field(primary_key=True)
     name: str
     price: float
     currency: str
@@ -25,15 +26,20 @@ class CacheService:
     """
     Service layer responsible for caching market snapshots in SQLite and managing TTL expiration.
     """
-    def __init__(self, session: Session, ttl_seconds: int = 300):
+    def __init__(self, session: Session, provider: str = "yfinance", ttl_seconds: int = 300):
         self._session = session
+        self._provider = provider
         self._ttl_seconds = ttl_seconds
 
-    def get(self, symbol: str) -> Optional[MarketSnapshot]:
+    def get(self, symbol: str, provider: Optional[str] = None) -> Optional[MarketSnapshot]:
         """
         Retrieves a cached snapshot if it exists and has not expired.
         """
-        statement = select(CachedSnapshot).where(CachedSnapshot.symbol == symbol)
+        target_provider = provider or self._provider
+        statement = select(CachedSnapshot).where(
+            CachedSnapshot.symbol == symbol,
+            CachedSnapshot.provider == target_provider
+        )
         result = self._session.exec(statement).first()
         
         if not result:
@@ -54,14 +60,19 @@ class CacheService:
             volume=result.volume,
             market_cap=result.market_cap,
             previous_close=result.previous_close,
-            timestamp=result.timestamp
+            timestamp=result.timestamp,
+            provider=result.provider
         )
 
-    def set(self, snapshot: MarketSnapshot) -> None:
+    def set(self, snapshot: MarketSnapshot, provider: Optional[str] = None) -> None:
         """
         Saves or updates a market snapshot in the cache database.
         """
-        statement = select(CachedSnapshot).where(CachedSnapshot.symbol == snapshot.symbol)
+        target_provider = provider or snapshot.provider or self._provider
+        statement = select(CachedSnapshot).where(
+            CachedSnapshot.symbol == snapshot.symbol,
+            CachedSnapshot.provider == target_provider
+        )
         existing = self._session.exec(statement).first()
         
         if existing:
@@ -79,6 +90,7 @@ class CacheService:
         else:
             cached = CachedSnapshot(
                 symbol=snapshot.symbol,
+                provider=target_provider,
                 name=snapshot.name,
                 price=snapshot.price,
                 currency=snapshot.currency,

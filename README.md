@@ -68,9 +68,24 @@ Default keys are pre-configured:
 * `CACHE_TTL_SECONDS=300` (5-minute cache expiration)
 * `SERVICE_B_URL=http://localhost:8001` (used locally by Service A and C to locate Service B)
 * `SERVICE_C_URL=http://localhost:8002` (used locally by Service A to locate Service C)
+* `PRIMARY_PROVIDER=yfinance` (options: `yfinance`, `eodhd`, default: `yfinance`)
+* `FALLBACK_PROVIDER=none` (options: `yfinance`, `eodhd`, `none`, default: `none`)
+* `EODHD_API_KEY=your_eodhd_api_key_here` (required if `eodhd` is configured as primary or fallback)
 
 > [!NOTE]
 > When running with **Docker Compose**, service ports and internal routing are dynamically resolved using the `PORT_SERVICE_*` variables defined in `.env`. If you customize these ports, Docker Compose will automatically configure the container ports, host mappings, and internal URLs accordingly.
+
+### Primary & Fallback Market Providers
+FinAPI supports running either Yahoo Finance (`yfinance`) or EODHD APIs (`eodhd`) as data providers.
+To increase resilience against rate-limiting or scraping blockages, you can configure a primary and fallback structure:
+* **Primary Provider**: Set `PRIMARY_PROVIDER=eodhd` (or `yfinance`).
+* **Fallback Provider**: Set `FALLBACK_PROVIDER=yfinance` (or `eodhd`). If the primary provider fails, the system transparently logs the error and falls back to fetch the data from the secondary provider. The successful fallback data is cached under the fallback provider's bucket. Subsequent requests look up the cache hierarchically (primary first, then fallback), avoiding repeating slow API timeouts while fully preserving cache isolation.
+
+### EODHD Symbol Normalization
+EODHD requires ticker symbols to be formatted as `SYMBOL.EXCHANGE`. The EODHD provider automatically normalizes client requests to match EODHD requirements:
+* **Stocks**: Normal, exchange-less tickers are assumed to be US-listed (e.g. `AAPL` is converted to `AAPL.US`).
+* **Cryptocurrency**: Tickers ending in `-USD` are mapped to the cryptocurrency exchange `.CC` (e.g. `BTC-USD` is converted to `BTC-USD.CC`).
+* **Pre-formatted**: Tickers containing a dot `.` are queried as-is (e.g. `MSFT.US` remains unchanged).
 
 ---
 

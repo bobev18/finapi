@@ -104,3 +104,36 @@ def test_gateway_signal_failure(mock_service_c_client, client):
     
     assert response.status_code == 502
     assert response.json()["detail"] == "Gateway routing error: unavailable upstream service"
+
+
+@patch("service_a.app.main.service_b_client")
+def test_gateway_forwarding_404(mock_service_b_client, client):
+    from service_a.app.services.service_b_client import UpstreamHTTPException
+    mock_service_b_client.fetch_market_data.side_effect = UpstreamHTTPException(
+        status_code=404, detail="Symbol not found at provider"
+    )
+    
+    response = client.get(
+        "/api/v1/market-snapshot?symbol=INVALID",
+        headers={"Authorization": f"Bearer {settings.client_api_key}"}
+    )
+    
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Symbol not found at provider"
+
+
+@patch("service_a.app.main.service_c_client")
+def test_gateway_signal_forwarding_404(mock_service_c_client, client):
+    from service_a.app.services.service_c_client import UpstreamHTTPException
+    mock_service_c_client.fetch_market_signal.side_effect = UpstreamHTTPException(
+        status_code=404, detail="Symbol not found at provider"
+    )
+    
+    response = client.get(
+        "/api/v1/market-signal?symbol=INVALID",
+        headers={"Authorization": f"Bearer {settings.client_api_key}"}
+    )
+    
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Symbol not found at provider"
+

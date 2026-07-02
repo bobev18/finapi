@@ -135,3 +135,51 @@ def test_signal_fallback_both_missing(mock_service_b_client, client):
     data = response.json()
     assert data["signal"] == "neutral"
     assert data["change_percent"] == 0.0
+
+
+@patch("service_c.app.main.service_b_client")
+def test_signal_endpoint_forward_404(mock_service_b_client, client):
+    from service_c.app.services.service_b_client import UpstreamHTTPException
+    mock_service_b_client.fetch_market_data.side_effect = UpstreamHTTPException(
+        status_code=404, detail="Symbol not found at provider"
+    )
+    
+    response = client.get(
+        "/internal/market-signal?symbol=INVALID",
+        headers={"Authorization": f"Bearer {settings.signal_api_key}"}
+    )
+    
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Symbol not found at provider"
+
+
+@patch("service_c.app.main.service_b_client")
+def test_signal_endpoint_gateway_routing_error(mock_service_b_client, client):
+    mock_service_b_client.fetch_market_data.side_effect = Exception("Service B is down")
+    
+    response = client.get(
+        "/internal/market-signal?symbol=AAPL",
+        headers={"Authorization": f"Bearer {settings.signal_api_key}"}
+    )
+    
+    assert response.status_code == 502
+    assert "Gateway routing error to Service B" in response.json()["detail"]
+
+
+@patch("service_c.app.main.service_b_client")
+def test_signal_endpoint_missing_price_error(mock_service_b_client, client):
+    mock_service_b_client.fetch_market_data.return_value = {
+        "symbol": "AAPL",
+        "price": None,
+        "open": 100.0,
+        "previous_close": 100.0
+    }
+    
+    response = client.get(
+        "/internal/market-signal?symbol=AAPL",
+        headers={"Authorization": f"Bearer {settings.signal_api_key}"}
+    )
+    
+    assert response.status_code == 502
+    assert "Invalid market data: price field is missing" in response.json()["detail"]
+

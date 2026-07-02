@@ -13,6 +13,9 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-test_internal_key}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
       - DATABASE_URL=sqlite:////app/data/market_cache.db
+      - PRIMARY_PROVIDER=${PRIMARY_PROVIDER:-yfinance}
+      - FALLBACK_PROVIDER=${FALLBACK_PROVIDER:-none}
+      - EODHD_API_KEY=${EODHD_API_KEY:-}
     volumes:
       - cache_data:/app/data
 

@@ -4,7 +4,13 @@ from sqlmodel import Session, create_engine, SQLModel
 from service_b.app.config import settings
 from service_b.app.schemas.market import MarketSnapshot
 from service_b.app.services.cache import CacheService
-from service_b.app.services.market_data import MarketDataClient, UpstreamAPIError
+from service_b.app.services.market_data import (
+    BaseMarketDataProvider,
+    YFinanceProvider,
+    EodhdProvider,
+    FallbackProvider,
+    UpstreamAPIError
+)
 
 # Create the SQLite engine
 engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
@@ -29,7 +35,30 @@ app = FastAPI(
 )
 
 # Initialize singletons
-market_client = MarketDataClient(retries=3, delay_seconds=1.0)
+def get_market_provider() -> BaseMarketDataProvider:
+    """
+    Factory function to resolve primary and fallback market data providers based on config settings.
+    """
+    def instantiate_provider(provider_name: str) -> BaseMarketDataProvider:
+        name = provider_name.lower()
+        if name == "yfinance":
+            return YFinanceProvider(retries=3, delay_seconds=1.0)
+        elif name == "eodhd":
+            if not settings.eodhd_api_key:
+                raise ValueError("eodhd_api_key must be set when eodhd is used as a provider")
+            return EodhdProvider(api_key=settings.eodhd_api_key, retries=3, delay_seconds=1.0)
+        else:
+            raise ValueError(f"Unknown market data provider: {provider_name}")
+
+    primary = instantiate_provider(settings.primary_provider)
+    
+    if settings.fallback_provider and settings.fallback_provider.lower() != "none":
+        fallback = instantiate_provider(settings.fallback_provider)
+        return FallbackProvider(primary=primary, fallback=fallback)
+        
+    return primary
+
+market_client = get_market_provider()
 
 def verify_internal_token(request: Request):
     """
@@ -62,20 +91,37 @@ def get_market_data(
     Fetches normalized market snapshot for the given symbol.
     Checks the local cache database first, then queries yfinance if it's a miss/expired.
     """
-    cache_service = CacheService(db, ttl_seconds=settings.cache_ttl_seconds)
+    cache_service = CacheService(
+        db,
+        provider=settings.primary_provider,
+        ttl_seconds=settings.cache_ttl_seconds
+    )
     
-    # 1. Attempt cache lookup
-    cached = cache_service.get(symbol)
+    # 1. Attempt cache lookup: try primary provider first
+    cached = cache_service.get(symbol, provider=settings.primary_provider)
     if cached:
         return cached
+
+    # Try fallback provider second
+    if settings.fallback_provider and settings.fallback_provider.lower() != "none":
+        cached = cache_service.get(symbol, provider=settings.fallback_provider)
+        if cached:
+            return cached
 
     # 2. Cache miss -> Fetch from external API
     try:
         snapshot = market_client.fetch_snapshot(symbol)
-        cache_service.set(snapshot)
+        # Cache under the provider that actually retrieved the data
+        cache_service.set(snapshot, provider=snapshot.provider)
         return snapshot
     except UpstreamAPIError as e:
+        err_msg = str(e)
+        if "Could not find price" in err_msg or "could not convert string to float: 'NA'" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Symbol not found at provider"
+            )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Upstream API failure: {str(e)}"
+            detail=f"Upstream API failure: {err_msg}"
         )

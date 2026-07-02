@@ -1,6 +1,12 @@
 import httpx
 from service_a.app.config import settings
 
+class UpstreamHTTPException(Exception):
+    def __init__(self, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(f"Upstream returned HTTP {status_code}: {detail}")
+
 class ServiceCClient:
     """
     HTTP client responsible for making authorized REST calls to Service C (Market Signal Service).
@@ -30,7 +36,7 @@ class ServiceCClient:
                         detail = response.json().get("detail", response.text)
                     except Exception:
                         detail = response.text
-                    raise Exception(f"Service C returned HTTP {response.status_code}: {detail}")
+                    raise UpstreamHTTPException(status_code=response.status_code, detail=detail)
         except httpx.RequestError as e:
             raise Exception(f"Failed to communicate with Service C: {str(e)}")
 
