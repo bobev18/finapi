@@ -10,8 +10,9 @@ The project is structured as a two-service architecture to separate concerns, en
 
 ```mermaid
 graph TD
-    Client[Client / Consumer] -->|REST + Bearer token| ServiceA(Service A: API Gateway)
-    ServiceA -->|REST + Internal Bearer token| ServiceB(Service B: Market Data Service)
+    Client[Client / Consumer] -->|REST + Bearer Client Key| ServiceA(Service A: API Gateway)
+    ServiceA -->|REST + Bearer Signal Key| ServiceC(Service C: Market Signal Service)
+    ServiceC -->|REST + Bearer Internal Key| ServiceB(Service B: Market Data Service)
     ServiceB -->|yfinance / external API| PublicAPI(Public Market API)
     ServiceB -->|Read/Write| CacheDB[(SQLite Cache DB)]
 ```
@@ -21,15 +22,23 @@ graph TD
 * **Responsibilities**:
   * Validates client Bearer API keys (`Authorization: Bearer <key>`).
   * Rejects unauthenticated requests with `HTTP 401 Unauthorized`.
-  * Proxies authorized requests to Service B over internal REST.
+  * Proxies authorized signal requests to Service C, or raw market data requests to Service B.
   * Ensures external clients have no direct visibility or access to upstream API engines or database layers.
 
-### 2. Service B — Market Data Service (Port `8001`)
+### 2. Service C — Market Signal Service (Port `8002`)
+* **Role**: Rule-based calculation service.
+* **Responsibilities**:
+  * Protects internal endpoints with a separate signal Bearer token.
+  * Queries Service B over internal REST to obtain normalized market snapshot.
+  * Derives a simple sentiment signal (`bullish` / `neutral` / `bearish`) based on daily percentage price changes.
+  * Outputs clear labeling marking it as a rule-based indicator, not financial advice.
+
+### 3. Service B — Market Data Service (Port `8001`)
 * **Role**: Internal integration layer.
 * **Responsibilities**:
   * Protects internal endpoints with a separate internal Bearer token.
   * Interacts with `yfinance` to fetch real-time stock or crypto details.
-  * Normalizes the external payloads into a stable, internal `MarketSnapshot` schema.
+  * Normalizes the external payloads into a stable, internal `MarketSnapshot` DTO with `previous_close` field.
   * Caches responses in a local SQLite database with a configurable Time-to-Live (TTL) to limit external API pressure and minimize response latency.
   * Employs timeout and retry resilience for upstream HTTP requests.
 
@@ -88,13 +97,23 @@ If you prefer running the services directly in your local environment:
    uv run uvicorn service_b.app.main:app --port 8001
    ```
 
-3. **Start Service A (Gateway)**:
+3. **Start Service C (Market Signal)**:
+   ```bash
+   # In Windows PowerShell:
+   $env:PORT="8002"
+   $env:SIGNAL_API_KEY="test_signal_key"
+   $env:INTERNAL_API_KEY="test_internal_key"
+   $env:SERVICE_B_URL="http://localhost:8001"
+   uv run uvicorn service_c.app.main:app --port 8002
+   ```
+
+4. **Start Service A (Gateway)**:
    ```bash
    # In Windows PowerShell:
    $env:PORT="8000"
    $env:CLIENT_API_KEY="test_client_key"
-   $env:INTERNAL_API_KEY="test_internal_key"
-   $env:SERVICE_B_URL="http://localhost:8001"
+   $env:SIGNAL_API_KEY="test_signal_key"
+   $env:SERVICE_C_URL="http://localhost:8002"
    uv run uvicorn service_a.app.main:app --port 8000
    ```
 ---
@@ -173,7 +192,7 @@ uv run pytest
 
 ## API Request Examples
 
-### 1. Successful Request to Gateway (Service A)
+### 1. Request Market Snapshot from Gateway (Service A)
 Request a normalized snapshot for Apple (`AAPL`):
 ```bash
 curl -i -H "Authorization: Bearer test_client_key" "http://localhost:8000/api/v1/market-snapshot?symbol=AAPL"
@@ -191,11 +210,30 @@ curl -i -H "Authorization: Bearer test_client_key" "http://localhost:8000/api/v1
   "open": 174.50,
   "volume": 52000000.0,
   "market_cap": 2700000000000.0,
+  "previous_close": 174.00,
   "timestamp": 1700000000.0
 }
 ```
 
-### 2. Unauthorized Requests (Service A)
+### 2. Request Market Signal from Gateway (Service A)
+Request the rule-based market signal for Apple (`AAPL`):
+```bash
+curl -i -H "Authorization: Bearer test_client_key" "http://localhost:8000/api/v1/market-signal?symbol=AAPL"
+```
+
+**Expected Response (HTTP 200)**:
+```json
+{
+  "symbol": "AAPL",
+  "signal": "bullish",
+  "change_percent": 0.8621,
+  "indicator_type": "rule-based",
+  "disclaimer": "Disclaimer: This is a rule-based indicator derived from recent price changes and does not constitute financial advice. Use at your own risk.",
+  "timestamp": 1700000000.0
+}
+```
+
+### 3. Unauthorized Requests (Service A)
 Requests without a valid Bearer token are rejected:
 ```bash
 # Missing token
@@ -211,9 +249,15 @@ curl -i -H "Authorization: Bearer wrong_key" "http://localhost:8000/api/v1/marke
 }
 ```
 
-### 3. Direct Request to Internal Service B (For Testing)
+### 4. Direct Request to Internal Service C (For Testing)
+To query the isolated internal signal service directly:
+```bash
+curl -i -H "Authorization: Bearer test_signal_key" "http://localhost:8002/internal/market-signal?symbol=AAPL"
+```
+
+### 5. Direct Request to Internal Service B (For Testing)
 To query the isolated internal data service directly:
 ```bash
 curl -i -H "Authorization: Bearer test_internal_key" "http://localhost:8001/internal/market-data?symbol=BTC-USD"
 ```
-*(Direct client access should be blocked in production environments by restricting firewall rules on port `8001`).*
+*(Direct client access should be blocked in production environments by restricting firewall rules on ports `8001` and `8002`).*

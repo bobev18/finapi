@@ -16,6 +16,21 @@ services:
     volumes:
       - cache_data:/app/data
 
+  service_c:
+    build:
+      context: .
+      dockerfile: service_c/Dockerfile
+    container_name: service_c
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - SIGNAL_API_KEY=${SIGNAL_API_KEY:-test_signal_key}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-test_internal_key}
+      - SERVICE_B_URL=http://service_b:8001
+    depends_on:
+      - service_b
+
   service_a:
     build:
       context: .
@@ -27,9 +42,10 @@ services:
       - PORT=8000
       - CLIENT_API_KEY=${CLIENT_API_KEY:-test_client_key}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-test_internal_key}
-      - SERVICE_B_URL=http://service_b:8001
+      - SERVICE_C_URL=http://service_c:8002
+      - SIGNAL_API_KEY=${SIGNAL_API_KEY:-test_signal_key}
     depends_on:
-      - service_b
+      - service_c
 
 volumes:
   cache_data:

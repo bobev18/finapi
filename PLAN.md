@@ -6,12 +6,13 @@ This document outlines the architecture, infrastructure requirements, and implem
 
 ## 1. Architecture Definition
 
-The system is split into two primary Python services that communicate over REST, with an optional third signal service.
+The system is split into three primary Python services that communicate over REST.
 
 ```mermaid
 graph TD
-    Client[Client / Consumer] -->|REST + API Key| ServiceA(Service A: API Gateway)
-    ServiceA -->|REST + Internal Key| ServiceB(Service B: Market Data Service)
+    Client[Client / Consumer] -->|REST + Bearer Client Key| ServiceA(Service A: API Gateway)
+    ServiceA -->|REST + Bearer Signal Key| ServiceC(Service C: Market Signal Service)
+    ServiceC -->|REST + Bearer Internal Key| ServiceB(Service B: Market Data Service)
     ServiceB -->|yfinance / external API| PublicAPI(Public Market API)
     ServiceB -->|Read/Write| CacheDB[(SQLite Cache DB)]
 ```
@@ -24,8 +25,17 @@ graph TD
 * **Key Responsibilities**:
   * Implements bearer token validation using the `Authorization: Bearer <key>` header.
   * Rejects unauthorized requests with `HTTP 401 Unauthorized`.
-  * Calls Service B over REST to fetch raw/normalized market snapshot.
+  * Calls Service C over REST to fetch the derived market signal, or Service B for raw snapshots.
   * Ensures that raw credentials and upstream endpoints are never exposed.
+
+#### Service C — Market Signal Service
+* **Purpose**: Performs rule-based calculations on market snapshots to produce sentiment signals.
+* **Technology**: Python with **FastAPI**.
+* **Key Responsibilities**:
+  * Validates internal Bearer token (`SIGNAL_API_KEY`) from Service A.
+  * Fetches the market snapshot from Service B over REST.
+  * Derives a bullish/bearish/neutral signal based on daily percentage price change.
+  * Labels signals as rule-based and appends financial advice disclaimer.
 
 #### Service B — Market Data Service
 * **Purpose**: Manages external data integration, response normalization, caching, and service-to-service security.
@@ -69,4 +79,7 @@ graph TD
    - Commit 3: Service B development (yfinance integration + normalization + internal endpoint).
    - Commit 4: Service B local caching (SQLite storage with TTL).
    - Commit 5: Service A development (API key verification + inter-service client).
-   - Commit 6: End-to-end testing, curl examples, and final README documentation.
+   - Commit 6: Service B previous close database model & normalization updates.
+   - Commit 7: Service C development (rule-based signal calculations + Service B client).
+   - Commit 8: Service A update to integrate Service C Client and market-signal endpoint.
+   - Commit 9: Service orchestration via Docker Compose, env configs, and README updates.
