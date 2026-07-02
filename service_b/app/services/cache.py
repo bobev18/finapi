@@ -18,6 +18,7 @@ class CachedSnapshot(SQLModel, table=True):
     open: Optional[float] = None
     volume: Optional[float] = None
     market_cap: Optional[float] = None
+    previous_close: Optional[float] = None
     timestamp: float
 
 class CacheService:
@@ -52,6 +53,7 @@ class CacheService:
             open=result.open,
             volume=result.volume,
             market_cap=result.market_cap,
+            previous_close=result.previous_close,
             timestamp=result.timestamp
         )
 
@@ -71,6 +73,7 @@ class CacheService:
             existing.open = snapshot.open
             existing.volume = snapshot.volume
             existing.market_cap = snapshot.market_cap
+            existing.previous_close = snapshot.previous_close
             existing.timestamp = snapshot.timestamp
             self._session.add(existing)
         else:
@@ -84,6 +87,7 @@ class CacheService:
                 open=snapshot.open,
                 volume=snapshot.volume,
                 market_cap=snapshot.market_cap,
+                previous_close=snapshot.previous_close,
                 timestamp=snapshot.timestamp
             )
             self._session.add(cached)

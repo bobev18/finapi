@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 from sqlmodel import SQLModel, create_engine, Session
 from service_b.app.main import app, get_db_session
+from service_b.app.config import settings
 from service_b.app.schemas.market import MarketSnapshot
 from service_b.app.services.market_data import UpstreamAPIError
 from service_b.app.services.cache import CachedSnapshot
@@ -44,10 +45,10 @@ def test_get_market_data_invalid_token(client):
 
 def test_get_market_data_missing_symbol(client):
     # We use a mock token check or override settings for the test. 
-    # Let's pass the correct expected token: "test_internal_key" (configured in test settings/env)
+    # Let's pass the correct expected token
     response = client.get(
         "/internal/market-data",
-        headers={"Authorization": "Bearer test_internal_key"}
+        headers={"Authorization": f"Bearer {settings.internal_api_key}"}
     )
     assert response.status_code == 422 # FastAPI validation error for missing query param
 
@@ -68,7 +69,7 @@ def test_get_market_data_cache_hit(mock_market_client, client, db_session):
     
     response = client.get(
         "/internal/market-data?symbol=AAPL",
-        headers={"Authorization": "Bearer test_internal_key"}
+        headers={"Authorization": f"Bearer {settings.internal_api_key}"}
     )
     
     assert response.status_code == 200
@@ -93,7 +94,7 @@ def test_get_market_data_cache_miss_success(mock_market_client, client, db_sessi
     
     response = client.get(
         "/internal/market-data?symbol=GOOG",
-        headers={"Authorization": "Bearer test_internal_key"}
+        headers={"Authorization": f"Bearer {settings.internal_api_key}"}
     )
     
     assert response.status_code == 200
@@ -117,7 +118,7 @@ def test_get_market_data_upstream_failure(mock_market_client, client):
     
     response = client.get(
         "/internal/market-data?symbol=MSFT",
-        headers={"Authorization": "Bearer test_internal_key"}
+        headers={"Authorization": f"Bearer {settings.internal_api_key}"}
     )
     
     assert response.status_code == 502

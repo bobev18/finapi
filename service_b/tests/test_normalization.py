@@ -14,7 +14,8 @@ def test_normalize_stock_info_success():
         "dayLow": 174.00,
         "open": 174.50,
         "volume": 52000000,
-        "marketCap": 2700000000000
+        "marketCap": 2700000000000,
+        "previousClose": 174.00
     }
     
     snapshot = normalize_ticker_info(symbol="AAPL", raw_info=mock_info)
@@ -29,6 +30,7 @@ def test_normalize_stock_info_success():
     assert snapshot.open == 174.50
     assert snapshot.volume == 52000000
     assert snapshot.market_cap == 2700000000000
+    assert snapshot.previous_close == 174.00
     assert snapshot.timestamp > 0
 
 def test_normalize_crypto_info_success():
@@ -42,7 +44,8 @@ def test_normalize_crypto_info_success():
         "regularMarketDayLow": 64000.00,
         "regularMarketOpen": 64500.00,
         "volume": 25000000000,
-        "marketCap": 1280000000000
+        "marketCap": 1280000000000,
+        "regularMarketPreviousClose": 64000.00
     }
     
     snapshot = normalize_ticker_info(symbol="BTC-USD", raw_info=mock_info)
@@ -55,6 +58,7 @@ def test_normalize_crypto_info_success():
     assert snapshot.open == 64500.00
     assert snapshot.volume == 25000000000
     assert snapshot.market_cap == 1280000000000
+    assert snapshot.previous_close == 64000.00
 
 def test_normalize_missing_essential_fields():
     # If price and common price keys are missing, it should raise a ValueError
@@ -83,3 +87,4 @@ def test_normalize_with_default_fallbacks():
     assert snapshot.open is None
     assert snapshot.volume is None
     assert snapshot.market_cap is None
+    assert snapshot.previous_close is None

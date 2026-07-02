@@ -14,4 +14,5 @@ class MarketSnapshot(BaseModel):
     open: Optional[float] = Field(None, description="Market open price")
     volume: Optional[float] = Field(None, description="Trading volume")
     market_cap: Optional[float] = Field(None, description="Market capitalization")
+    previous_close: Optional[float] = Field(None, description="Previous close price")
     timestamp: float = Field(..., description="Unix timestamp of when the data was retrieved")

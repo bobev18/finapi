@@ -25,7 +25,7 @@ def test_gateway_missing_symbol(client):
     # Verify that we validate the symbol query parameter
     response = client.get(
         "/api/v1/market-snapshot",
-        headers={"Authorization": "Bearer test_client_key"} # configured in test settings
+        headers={"Authorization": f"Bearer {settings.client_api_key}"}
     )
     assert response.status_code == 422
 
@@ -48,7 +48,7 @@ def test_gateway_forwarding_success(mock_service_b_client, client):
     
     response = client.get(
         "/api/v1/market-snapshot?symbol=AAPL",
-        headers={"Authorization": "Bearer test_client_key"}
+        headers={"Authorization": f"Bearer {settings.client_api_key}"}
     )
     
     assert response.status_code == 200
@@ -62,7 +62,7 @@ def test_gateway_forwarding_failure(mock_service_b_client, client):
     
     response = client.get(
         "/api/v1/market-snapshot?symbol=AAPL",
-        headers={"Authorization": "Bearer test_client_key"}
+        headers={"Authorization": f"Bearer {settings.client_api_key}"}
     )
     
     assert response.status_code == 502

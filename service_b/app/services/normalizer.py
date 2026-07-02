@@ -33,6 +33,7 @@ def normalize_ticker_info(symbol: str, raw_info: Dict[str, Any]) -> MarketSnapsh
     open_val = raw_info.get("open") or raw_info.get("regularMarketOpen")
     volume = raw_info.get("volume") or raw_info.get("regularMarketVolume")
     market_cap = raw_info.get("marketCap")
+    previous_close = raw_info.get("previousClose") or raw_info.get("regularMarketPreviousClose")
     
     return MarketSnapshot(
         symbol=symbol,
@@ -44,5 +45,6 @@ def normalize_ticker_info(symbol: str, raw_info: Dict[str, Any]) -> MarketSnapsh
         open=float(open_val) if open_val is not None else None,
         volume=float(volume) if volume is not None else None,
         market_cap=float(market_cap) if market_cap is not None else None,
+        previous_close=float(previous_close) if previous_close is not None else None,
         timestamp=time.time()
     )

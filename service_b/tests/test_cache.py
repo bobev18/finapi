@@ -29,6 +29,7 @@ def test_cache_set_and_get_hit(db_session):
         open=149.0,
         volume=1000000.0,
         market_cap=2000000000.0,
+        previous_close=147.50,
         timestamp=time.time()
     )
     
@@ -39,6 +40,7 @@ def test_cache_set_and_get_hit(db_session):
     assert cached.symbol == "AAPL"
     assert cached.price == 150.0
     assert cached.name == "Apple Inc."
+    assert cached.previous_close == 147.50
 
 def test_cache_expiration(db_session):
     # Set TTL to 2 seconds
