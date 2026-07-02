@@ -7,7 +7,7 @@ class CachedSnapshot(SQLModel, table=True):
     """
     SQLModel representation of a cached market snapshot in the SQLite database.
     """
-    __tablename__ = "market_cache"
+    __tablename__ = "market_cache"  # type: ignore
     
     symbol: str = Field(primary_key=True)
     name: str

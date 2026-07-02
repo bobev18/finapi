@@ -43,3 +43,14 @@ This document logs significant architectural and configuration decisions.
 - **Consequences**:
   - Git remote is set up as `https://<PAT>@github.com/bobev18/finapi.git`.
   - Pushing succeeds without interactive prompts or GUI popups.
+
+---
+
+## 5. IDE Python Interpreter & Linting Configuration
+- **Status**: Decided & Implemented
+- **Context**: The IDE (Antigravity/VS Code) showed import errors for packages installed in the virtual environment because it was falling back to the system Python interpreter.
+- **Decision**: Configure Pyright and VS Code Workspace settings to use the `.venv` interpreter created by `uv`.
+- **Consequences**:
+  - Created `pyrightconfig.json` pointing to `.venv` as the active virtual environment.
+  - Created `.vscode/settings.json` specifying `"python.defaultInterpreterPath"` pointing to the virtual environment's python executable.
+  - Solved linting/import errors in the IDE.
