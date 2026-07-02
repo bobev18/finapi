@@ -62,17 +62,20 @@ cp .env.example .env
 ```
 Default keys are pre-configured:
 * `CLIENT_API_KEY=test_client_key` (used by clients to call Service A)
-* `INTERNAL_API_KEY=test_internal_key` (used by Service A to call Service B)
+* `INTERNAL_API_KEY=test_internal_key` (used by Service C to call Service B)
+* `SIGNAL_API_KEY=test_signal_key` (used by Service A to call Service C)
 * `CACHE_TTL_SECONDS=300` (5-minute cache expiration)
+* `SERVICE_C_URL=http://localhost:8002` (used by Service A to locate Service C)
 
 ---
 
 ### Option A: Run via Docker Compose (Recommended)
-You can run both services together using Docker Compose:
+You can run all three services together using Docker Compose:
 ```bash
 docker compose up --build
 ```
 * **Service A (Gateway)** is exposed publicly at: `http://localhost:8000`
+* **Service C (Market Signal)** is exposed internally/locally at: `http://localhost:8002`
 * **Service B (Internal)** is exposed internally/locally at: `http://localhost:8001`
 * The cache database is persisted under a volume named `cache_data`.
 
