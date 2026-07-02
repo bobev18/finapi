@@ -97,6 +97,68 @@ If you prefer running the services directly in your local environment:
    $env:SERVICE_B_URL="http://localhost:8001"
    uv run uvicorn service_a.app.main:app --port 8000
    ```
+---
+
+### 3. Managing the Services
+
+#### Restarting & Rebuilding
+
+* **If running via Docker Compose**:
+  * **Quick Restart** (restarts the containers without rebuilding):
+    ```bash
+    docker compose restart
+    ```
+  * **Rebuild & Restart** (required if source code or dependency configuration changes):
+    ```bash
+    docker compose up --build -d
+    ```
+* **If running locally with `uv`**:
+  * Stop the running processes using `Ctrl+C` in their respective terminal windows.
+  * Start them again using the run commands:
+    ```bash
+    uv run uvicorn service_b.app.main:app --port 8001
+    uv run uvicorn service_a.app.main:app --port 8000
+    ```
+  * If dependencies in [requirements.txt](file:///d:/gits/finapi/requirements.txt) have changed, re-install them first:
+    ```bash
+    uv pip install -r requirements.txt
+    ```
+
+#### Shutdown & Freeing Ports
+
+* **If running via Docker Compose**:
+  * **Stop services** (keeps containers and persists the cache data volume):
+    ```bash
+    docker compose stop
+    ```
+  * **Stop and remove containers** (fully frees up ports `8000` and `8001`):
+    ```bash
+    docker compose down
+    ```
+  * **Remove cached data volume** (warning: deletes all cached data):
+    ```bash
+    docker compose down -v
+    ```
+* **If running locally with `uv`**:
+  * Press `Ctrl+C` in the active terminal windows.
+  * If a process is hung or running in the background and you need to force-free ports `8000` or `8001` on Windows:
+    ```powershell
+    # Find processes using the ports
+    Get-NetTCPConnection -LocalPort 8000, 8001 -ErrorAction SilentlyContinue | Select-Object OwningProcess -Unique
+
+    # Kill a specific process by PID
+    Stop-Process -Id <PID> -Force
+    ```
+
+#### When is a Restart/Rebuild Needed?
+
+| Scenario | Local (`uv`) Action | Docker Compose Action |
+| :--- | :--- | :--- |
+| **API Key or configuration changes** (modifying [.env](file:///d:/gits/finapi/.env) or environment variables) | Update environment variables in the terminals and restart the services. | Run `docker compose down` and `docker compose up -d` to recreate containers with the new [.env](file:///d:/gits/finapi/.env) values. |
+| **Source code updates** | Restart the running Uvicorn server processes (or use `--reload` during development). | Run `docker compose up --build -d` to rebuild the Docker images with the new code. |
+| **Dependency updates** (updating [requirements.txt](file:///d:/gits/finapi/requirements.txt)) | Run `uv pip install -r requirements.txt` and restart the services. | Run `docker compose up --build -d` to trigger a new container image build. |
+| **Ports already in use / conflicts** | Stop any existing services or processes running on ports `8000` or `8001`. | Run `docker compose down` to release the ports. |
+| **Reset/Clear Cache Database** | Delete the local [market_cache.db](file:///d:/gits/finapi/market_cache.db) file. | Run `docker compose down -v` to remove the persistent cache volume, then start up again. |
 
 ---
 
