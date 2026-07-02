@@ -2,6 +2,9 @@ from fastapi import FastAPI, Depends, Query, Request, HTTPException, status
 from service_a.app.config import settings
 from service_a.app.services.service_b_client import service_b_client
 from service_a.app.services.service_c_client import service_c_client
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Service A - API Gateway / Backend",
@@ -41,9 +44,10 @@ def get_market_snapshot(
         snapshot = service_b_client.fetch_market_data(symbol)
         return snapshot
     except Exception as e:
+        logger.error(f"Error fetching market snapshot for {symbol}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gateway routing error: {str(e)}"
+            detail="Gateway routing error: unavailable downstream service"
         )
 
 @app.get(
@@ -61,7 +65,8 @@ def get_market_signal(
         signal = service_c_client.fetch_market_signal(symbol)
         return signal
     except Exception as e:
+        logger.error(f"Error fetching market signal for {symbol}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gateway routing error: {str(e)}"
+            detail="Gateway routing error: unavailable downstream service"
         )
