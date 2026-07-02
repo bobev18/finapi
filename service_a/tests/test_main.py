@@ -66,7 +66,7 @@ def test_gateway_forwarding_failure(mock_service_b_client, client):
     )
     
     assert response.status_code == 502
-    assert response.json()["detail"] == "Gateway routing error: unavailable downstream service"
+    assert response.json()["detail"] == "Gateway routing error: unavailable upstream service"
 
 def test_gateway_signal_unauthorized(client):
     response = client.get("/api/v1/market-signal?symbol=AAPL")
@@ -103,4 +103,4 @@ def test_gateway_signal_failure(mock_service_c_client, client):
     )
     
     assert response.status_code == 502
-    assert response.json()["detail"] == "Gateway routing error: unavailable downstream service"
+    assert response.json()["detail"] == "Gateway routing error: unavailable upstream service"

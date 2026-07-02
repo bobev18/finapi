@@ -47,7 +47,7 @@ def get_market_snapshot(
         logger.error(f"Error fetching market snapshot for {symbol}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gateway routing error: unavailable downstream service"
+            detail="Gateway routing error: unavailable upstream service"
         )
 
 @app.get(
@@ -68,5 +68,5 @@ def get_market_signal(
         logger.error(f"Error fetching market signal for {symbol}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gateway routing error: unavailable downstream service"
+            detail="Gateway routing error: unavailable upstream service"
         )
