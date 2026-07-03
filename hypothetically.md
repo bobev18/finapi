@@ -18,3 +18,10 @@ This document records notes on the hypothetical concept of querying both yfinanc
 ### 3. Cross-Validation
 * **Idea**: Query both providers and check for price differences to spot delays or discrepancies.
 * **Value**: Adds a verification layer to identify data anomalies.
+
+
+## Considerations
+
+* ideally each service should have it's own repo
+* all keys will be kept in a Vault, and pulled from there to be set and environmnet variables during deployment
+* 

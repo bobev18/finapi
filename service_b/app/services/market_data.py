@@ -3,6 +3,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 from enum import Enum
+import requests
 import yfinance as yf
 from eodhd import APIClient
 
@@ -61,17 +62,30 @@ class CircuitBreaker:
 
 def is_client_error(e: Exception) -> bool:
     """
-    Determines if an exception is a client-side error (e.g. invalid ticker, bad request, validation error)
-    that should not be retried.
+    Determines if an exception is a client-side error (e.g. invalid ticker,
+    bad request, or validation error) that should **not** be retried.
+
+    Classification is based solely on exception *type* and HTTP status code —
+    never on message string content, which is unreliable (e.g. a stock price
+    of 404.50 must not trigger a client-error classification).
+
+    Rules:
+    - ``ValueError``: always a client error (bad input / empty upstream data).
+    - ``requests.exceptions.HTTPError`` with a 4xx status code: client error,
+      **except** 429 (Too Many Requests) which is a server-side throttle and
+      should be retried.
+    - All other exceptions: not a client error (default safe: retry).
     """
     if isinstance(e, ValueError):
         return True
-    
-    # Check for HTTP client errors
-    msg = str(e).lower()
-    if "404" in msg or "400" in msg or "not found" in msg or "invalid symbol" in msg:
-        return True
-        
+
+    if isinstance(e, requests.exceptions.HTTPError):
+        response = getattr(e, "response", None)
+        if response is not None and hasattr(response, "status_code"):
+            status = response.status_code
+            # 4xx range = client errors, but 429 (rate-limit) should be retried
+            return 400 <= status < 500 and status != 429
+
     return False
 
 class BaseMarketDataProvider(ABC):

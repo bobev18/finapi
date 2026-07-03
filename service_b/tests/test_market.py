@@ -1,11 +1,13 @@
 import time
 import pytest
+import requests
 from unittest.mock import MagicMock, PropertyMock, patch
 from service_b.app.services.market_data import (
     YFinanceProvider,
     EodhdProvider,
     FallbackProvider,
-    UpstreamAPIError
+    UpstreamAPIError,
+    is_client_error,
 )
 from service_b.app.schemas.market import MarketSnapshot
 
@@ -354,6 +356,102 @@ def test_fallback_provider_circuit_breaker_behavior():
     # 3. Third request: CB is OPEN, primary is bypassed, fallback called directly
     res3 = provider.fetch_snapshot("AAPL")
     assert res3 == mock_snapshot
+
+
     # Primary call count remains at 2!
     assert mock_primary.fetch_snapshot.call_count == 2
 
+
+# ==========================================
+# is_client_error Unit Tests
+# ==========================================
+
+def _make_http_error(status_code: int) -> requests.exceptions.HTTPError:
+    """Helper that constructs a requests.HTTPError with a real response stub."""
+    response = MagicMock(spec=requests.Response)
+    response.status_code = status_code
+    err = requests.exceptions.HTTPError(response=response)
+    return err
+
+
+class TestIsClientError:
+    """
+    Unit tests for the is_client_error helper function.
+
+    Correctness is determined by the *type* and HTTP status code of the
+    exception, never by substring-matching the exception message.
+    """
+
+    # --- HTTP 4xx errors (client errors) ---
+
+    def test_http_400_is_client_error(self):
+        """HTTP 400 Bad Request should be classified as a client error."""
+        assert is_client_error(_make_http_error(400)) is True
+
+    def test_http_404_is_client_error(self):
+        """HTTP 404 Not Found should be classified as a client error."""
+        assert is_client_error(_make_http_error(404)) is True
+
+    def test_http_422_is_client_error(self):
+        """HTTP 422 Unprocessable Entity should be classified as a client error."""
+        assert is_client_error(_make_http_error(422)) is True
+
+    # --- HTTP errors that must NOT be treated as client errors ---
+
+    def test_http_429_is_not_client_error(self):
+        """
+        HTTP 429 Too Many Requests is a *server-side* throttle, not a
+        bad-client-request.  It must be retried, not suppressed.
+        """
+        assert is_client_error(_make_http_error(429)) is False
+
+    def test_http_500_is_not_client_error(self):
+        """HTTP 500 Internal Server Error is a server fault, not a client error."""
+        assert is_client_error(_make_http_error(500)) is False
+
+    def test_http_503_is_not_client_error(self):
+        """HTTP 503 Service Unavailable is a transient server error, must retry."""
+        assert is_client_error(_make_http_error(503)) is False
+
+    # --- ValueError: always a client error (bad input / empty data) ---
+
+    def test_value_error_is_client_error(self):
+        """ValueError raised for invalid/empty data should always be a client error."""
+        assert is_client_error(ValueError("empty ticker info")) is True
+
+    # --- False-positive guard: numeric digits in the message must NOT match ---
+
+    def test_numeric_in_message_is_not_client_error(self):
+        """
+        Regression guard: a message such as 'price was 404.50' must NOT be
+        misidentified as a client error.  Classification must rely on
+        exception *type*, not message content.
+        """
+        assert is_client_error(RuntimeError("The stock price was 404.50")) is False
+
+    def test_not_found_in_message_is_not_client_error(self):
+        """
+        Regression guard: a plain exception whose message contains 'not found'
+        must NOT be misidentified as a client error.
+        """
+        assert is_client_error(Exception("Data not found in cache")) is False
+
+    # --- HTTPError without a response object ---
+
+    def test_http_error_without_response_is_not_client_error(self):
+        """
+        An HTTPError that has no attached response (e.g. a connection-level
+        failure) should fall through to the safe default: not a client error.
+        """
+        err = requests.exceptions.HTTPError()  # response=None
+        assert is_client_error(err) is False
+
+    # --- Generic / unknown exceptions ---
+
+    def test_generic_exception_is_not_client_error(self):
+        """Unrecognised exception types should default to 'not a client error'."""
+        assert is_client_error(RuntimeError("unknown network issue")) is False
+
+    def test_connection_error_is_not_client_error(self):
+        """Connection errors are transient and must be retried."""
+        assert is_client_error(requests.exceptions.ConnectionError("timeout")) is False
