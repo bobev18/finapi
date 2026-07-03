@@ -1,4 +1,5 @@
 import time
+import threading
 import logging
 from abc import ABC, abstractmethod
 from typing import Optional
@@ -27,7 +28,15 @@ class CircuitState(Enum):
 
 class CircuitBreaker:
     """
-    A simple, thread-safe Circuit Breaker implementation for managing upstream provider states.
+    A thread-safe Circuit Breaker implementation for managing upstream provider
+    states.
+
+    All mutable state (_failure_count, _state, _last_state_change) is protected
+    by a reentrant lock (``threading.RLock``) so that concurrent callers cannot
+    corrupt the counter or observe partially-written state transitions.  A
+    reentrant lock is used (rather than a plain Lock) because the ``state``
+    property both reads *and* writes shared state, and is itself called from
+    within ``allow_request`` — same-thread re-entrancy must not deadlock.
     """
     def __init__(self, failure_threshold: int = 3, recovery_timeout: float = 30.0):
         self._failure_threshold = failure_threshold
@@ -35,28 +44,42 @@ class CircuitBreaker:
         self._failure_count = 0
         self._state = CircuitState.CLOSED
         self._last_state_change = time.time()
+        self._lock = threading.RLock()
 
     @property
     def state(self) -> CircuitState:
-        # Check if we should transition from OPEN to HALF_OPEN
-        if self._state == CircuitState.OPEN:
-            if time.time() - self._last_state_change > self._recovery_timeout:
-                self._state = CircuitState.HALF_OPEN
-                self._last_state_change = time.time()
-        return self._state
+        """Return the current circuit state, advancing OPEN → HALF_OPEN when the
+        recovery timeout has elapsed.  Thread-safe: holds the lock for the
+        entire check-then-act sequence so no two threads can race through the
+        transition simultaneously."""
+        with self._lock:
+            if self._state == CircuitState.OPEN:
+                if time.time() - self._last_state_change > self._recovery_timeout:
+                    self._state = CircuitState.HALF_OPEN
+                    self._last_state_change = time.time()
+            return self._state
 
     def record_success(self):
-        self._failure_count = 0
-        self._state = CircuitState.CLOSED
-        self._last_state_change = time.time()
-
-    def record_failure(self):
-        self._failure_count += 1
-        if self._failure_count >= self._failure_threshold:
-            self._state = CircuitState.OPEN
+        """Reset the breaker to CLOSED state.  All three fields are written
+        atomically under the lock so readers never observe a partial reset."""
+        with self._lock:
+            self._failure_count = 0
+            self._state = CircuitState.CLOSED
             self._last_state_change = time.time()
 
+    def record_failure(self):
+        """Increment the failure counter and open the circuit when the threshold
+        is reached.  The read-increment-compare-write sequence is atomic under
+        the lock, preventing lost updates from concurrent callers."""
+        with self._lock:
+            self._failure_count += 1
+            if self._failure_count >= self._failure_threshold:
+                self._state = CircuitState.OPEN
+                self._last_state_change = time.time()
+
     def allow_request(self) -> bool:
+        """Return True when the circuit is CLOSED or HALF_OPEN.
+        Delegates to ``state`` which already holds the lock."""
         state = self.state
         return state == CircuitState.CLOSED or state == CircuitState.HALF_OPEN
 

@@ -1,4 +1,5 @@
 import time
+import threading
 import pytest
 import requests
 from unittest.mock import MagicMock, PropertyMock, patch
@@ -254,6 +255,103 @@ def test_eodhd_provider_exhausted_retries(mock_client_class):
     provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
     with pytest.raises(UpstreamAPIError, match="Failed to fetch market data from EODHD"):
         provider.fetch_snapshot("AAPL")
+
+
+# ==========================================
+# CircuitBreaker Thread-Safety Tests
+# ==========================================
+
+def test_circuit_breaker_concurrent_failures_do_not_exceed_threshold():
+    """
+    RED: Two threads that both call record_failure() concurrently must each
+    increment _failure_count exactly once.  Without a lock the read-modify-write
+    is not atomic, so the final count may be under-counted and the breaker may
+    never open.
+    """
+    from service_b.app.services.market_data import CircuitBreaker, CircuitState
+
+    cb = CircuitBreaker(failure_threshold=100, recovery_timeout=60.0)
+    barrier = threading.Barrier(50)
+
+    def _fail():
+        barrier.wait()          # all threads start at exactly the same instant
+        cb.record_failure()
+
+    threads = [threading.Thread(target=_fail) for _ in range(50)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # Without a lock the count is often < 50 due to lost updates.
+    assert cb._failure_count == 50
+
+
+def test_circuit_breaker_concurrent_state_transition_is_idempotent():
+    """
+    RED: When _failure_count just reaches the threshold, two threads racing
+    inside record_failure() must not set _state to OPEN more than once and
+    must not corrupt _last_state_change.
+    """
+    from service_b.app.services.market_data import CircuitBreaker, CircuitState
+
+    THRESHOLD = 10
+    cb = CircuitBreaker(failure_threshold=THRESHOLD, recovery_timeout=60.0)
+    barrier = threading.Barrier(THRESHOLD)
+    state_changes: list[CircuitState] = []
+    lock = threading.Lock()
+
+    def _fail_and_record():
+        barrier.wait()
+        cb.record_failure()
+        with lock:
+            state_changes.append(cb._state)
+
+    threads = [threading.Thread(target=_fail_and_record) for _ in range(THRESHOLD)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # The breaker must end up OPEN and the count must not exceed the threshold.
+    assert cb._state == CircuitState.OPEN
+    assert cb._failure_count == THRESHOLD
+
+
+def test_circuit_breaker_half_open_transition_is_atomic():
+    """
+    RED: Multiple threads calling .state concurrently while the circuit is OPEN
+    and the timeout has elapsed must only ever see CLOSED or HALF_OPEN — never
+    an inconsistent intermediate value.
+    """
+    from service_b.app.services.market_data import CircuitBreaker, CircuitState
+
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout=0.01)
+    cb.record_failure()  # trip the breaker
+    time.sleep(0.05)     # let the recovery window expire
+
+    results: list[CircuitState] = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(20)
+
+    def _read_state():
+        barrier.wait()
+        s = cb.state
+        with lock:
+            results.append(s)
+
+    threads = [threading.Thread(target=_read_state) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    valid_states = {CircuitState.OPEN, CircuitState.HALF_OPEN, CircuitState.CLOSED}
+    assert all(s in valid_states for s in results), f"Unexpected states seen: {results}"
+    # After the timeout only HALF_OPEN or CLOSED are legal (not OPEN).
+    assert all(s != CircuitState.OPEN for s in results), (
+        "Circuit must have transitioned away from OPEN after recovery timeout"
+    )
 
 
 # ==========================================
