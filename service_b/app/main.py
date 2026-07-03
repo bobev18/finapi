@@ -12,7 +12,28 @@ from service_b.app.services.market_data import (
     UpstreamAPIError
 )
 
-# Create the SQLite engine
+# ---------------------------------------------------------------------------
+# Database engine — SQLite (single-worker constraint)
+# ---------------------------------------------------------------------------
+# SQLite only supports one concurrent writer at the OS level.  Running this
+# service with more than one uvicorn worker (e.g. ``--workers 2``) inside a
+# single container, or scaling to multiple container replicas that share the
+# same database file, will produce intermittent "database is locked" errors
+# under write load.
+#
+# ``check_same_thread=False`` is intentional: it allows SQLAlchemy's
+# connection pool to share a single SQLite connection across the multiple
+# *threads* that FastAPI's thread-pool executor can spawn within ONE worker
+# process.  It does NOT resolve cross-process or cross-container locking.
+#
+# SCALING CONSTRAINT: this service MUST be run with a single uvicorn worker
+# (the default).  Do NOT add ``--workers N`` (N > 1) to the start command.
+#
+# Migration path: if multi-worker or multi-replica deployments become
+# necessary, replace SQLite with PostgreSQL.  Only the DATABASE_URL
+# environment variable and the ``psycopg2`` / ``asyncpg`` driver dependency
+# need to change; the SQLModel schema and query code are driver-agnostic.
+# ---------------------------------------------------------------------------
 engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
 
 def get_db_session():

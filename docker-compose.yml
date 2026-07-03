@@ -1,6 +1,13 @@
 version: '3.8'
 
 services:
+  # NOTE: service_b uses SQLite as its cache store.  SQLite serialises all
+  # writes at the file level, so the service MUST run with a single uvicorn
+  # worker (the default).  Adding ``--workers N`` (N > 1) to the command, or
+  # running multiple replicas that share the same database volume, will cause
+  # intermittent "database is locked" errors under concurrent write load.
+  # To scale beyond a single worker, replace SQLite with PostgreSQL by
+  # changing DATABASE_URL and adding the psycopg2/asyncpg driver dependency.
   service_b:
     build:
       context: .
