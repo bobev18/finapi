@@ -1,3 +1,4 @@
+import asyncio
 import time
 import threading
 import logging
@@ -116,9 +117,12 @@ class BaseMarketDataProvider(ABC):
     Abstract base class representing a market data provider.
     """
     @abstractmethod
-    def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
+    async def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
         """
-        Queries the provider for a symbol and returns a normalized MarketSnapshot.
+        Asynchronously queries the provider for a symbol and returns a
+        normalized MarketSnapshot.  Implementations must not call blocking
+        I/O directly on the event loop — use ``asyncio.to_thread`` for
+        synchronous third-party clients.
         """
         pass
 
@@ -130,16 +134,29 @@ class YFinanceProvider(BaseMarketDataProvider):
         self._retries = retries
         self._delay_seconds = delay_seconds
 
-    def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
+    async def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
+        """
+        Fetch a market snapshot for *symbol* from Yahoo Finance.
+
+        Each attempt runs the blocking ``yf.Ticker`` call in a thread pool
+        via ``asyncio.to_thread`` so the event loop is never stalled.
+        Retries are separated by ``asyncio.sleep`` (not ``time.sleep``) so
+        the event loop can serve other requests during the back-off window.
+        """
         last_error = None
+
+        def _do_fetch() -> dict:
+            """Synchronous inner function executed inside a worker thread."""
+            ticker = yf.Ticker(symbol)
+            return ticker.info
+
         for attempt in range(1, self._retries + 1):
             try:
-                ticker = yf.Ticker(symbol)
-                info = ticker.info
-                
+                info = await asyncio.to_thread(_do_fetch)
+
                 if not info or not isinstance(info, dict):
                     raise ValueError(f"Upstream returned empty or invalid info dict: {info}")
-                
+
                 snapshot = normalize_ticker_info(symbol, info)
                 snapshot.provider = "yfinance"
                 return snapshot
@@ -151,8 +168,8 @@ class YFinanceProvider(BaseMarketDataProvider):
                     f"yfinance attempt {attempt}/{self._retries} failed for symbol {symbol}: {str(e)}"
                 )
                 if attempt < self._retries:
-                    time.sleep(self._delay_seconds)
-        
+                    await asyncio.sleep(self._delay_seconds)
+
         raise UpstreamAPIError(
             f"Failed to fetch market data for symbol {symbol} after {self._retries} attempts. Last error: {str(last_error)}",
             is_client_error=False
@@ -181,17 +198,28 @@ class EodhdProvider(BaseMarketDataProvider):
             return f"{symbol}.CC"
         return f"{symbol}.US"
 
-    def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
+    async def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
+        """
+        Fetch a market snapshot for *symbol* from EODHD.
+
+        The synchronous EODHD Python client is executed inside a worker
+        thread via ``asyncio.to_thread``.  Retries use ``asyncio.sleep``
+        so the event loop remains unblocked between attempts.
+        """
         normalized = self._normalize_symbol(symbol)
         last_error = None
+
+        def _do_fetch() -> dict:
+            """Synchronous inner function executed inside a worker thread."""
+            return self._client.get_live_stock_prices(ticker=normalized)
+
         for attempt in range(1, self._retries + 1):
             try:
-                # EODHD python client: get_live_stock_prices returns a dict for a single symbol
-                data = self._client.get_live_stock_prices(ticker=normalized)
-                
+                data = await asyncio.to_thread(_do_fetch)
+
                 if not data or not isinstance(data, dict):
                     raise ValueError(f"EODHD returned empty or invalid data: {data}")
-                
+
                 snapshot = normalize_eodhd_data(symbol, data)
                 return snapshot
             except Exception as e:
@@ -202,8 +230,8 @@ class EodhdProvider(BaseMarketDataProvider):
                     f"EODHD attempt {attempt}/{self._retries} failed for symbol {normalized}: {str(e)}"
                 )
                 if attempt < self._retries:
-                    time.sleep(self._delay_seconds)
-                    
+                    await asyncio.sleep(self._delay_seconds)
+
         raise UpstreamAPIError(
             f"Failed to fetch market data from EODHD for symbol {normalized} after {self._retries} attempts. Last error: {str(last_error)}",
             is_client_error=False
@@ -227,15 +255,24 @@ class FallbackProvider(BaseMarketDataProvider):
             recovery_timeout=recovery_timeout
         )
 
-    def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
+    async def fetch_snapshot(self, symbol: str) -> MarketSnapshot:
+        """
+        Fetch a market snapshot, preferring the primary provider.
+
+        If the circuit breaker is OPEN the primary is bypassed entirely
+        and the fallback is called directly.  On primary failure the
+        circuit breaker is updated and the fallback is tried.  All inner
+        ``fetch_snapshot`` calls are awaited so the event loop is free
+        throughout.
+        """
         if not self._circuit_breaker.allow_request():
             logger.warning(
                 f"Primary provider circuit is OPEN. Bypassing primary to call fallback provider directly for {symbol}."
             )
-            return self._fallback.fetch_snapshot(symbol)
-            
+            return await self._fallback.fetch_snapshot(symbol)
+
         try:
-            snapshot = self._primary.fetch_snapshot(symbol)
+            snapshot = await self._primary.fetch_snapshot(symbol)
             self._circuit_breaker.record_success()
             return snapshot
         except UpstreamAPIError as e:
@@ -246,7 +283,7 @@ class FallbackProvider(BaseMarketDataProvider):
                     "Querying fallback..."
                 )
                 try:
-                    return self._fallback.fetch_snapshot(symbol)
+                    return await self._fallback.fetch_snapshot(symbol)
                 except Exception:
                     raise
             else:
@@ -255,11 +292,11 @@ class FallbackProvider(BaseMarketDataProvider):
                     f"Primary provider failed with service error: {str(e)}. "
                     "Attempting fallback provider..."
                 )
-                return self._fallback.fetch_snapshot(symbol)
+                return await self._fallback.fetch_snapshot(symbol)
         except Exception as e:
             self._circuit_breaker.record_failure()
             logger.warning(
                 f"Primary provider failed with unexpected error: {str(e)}. "
                 "Attempting fallback provider..."
             )
-            return self._fallback.fetch_snapshot(symbol)
+            return await self._fallback.fetch_snapshot(symbol)

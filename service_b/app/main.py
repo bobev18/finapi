@@ -83,20 +83,25 @@ def verify_internal_token(request: Request):
     response_model=MarketSnapshot,
     dependencies=[Depends(verify_internal_token)]
 )
-def get_market_data(
+async def get_market_data(
     symbol: str = Query(..., min_length=1, description="Ticker symbol to query"),
     db: Session = Depends(get_db_session)
 ):
     """
     Fetches normalized market snapshot for the given symbol.
-    Checks the local cache database first, then queries yfinance if it's a miss/expired.
+
+    The route is ``async`` so that the event loop is not blocked while
+    waiting on the upstream provider.  Blocking provider I/O runs in a
+    thread pool via ``asyncio.to_thread`` inside each provider.
+    Checks the local cache database first, then queries the upstream
+    provider if it's a miss or the cached entry has expired.
     """
     cache_service = CacheService(
         db,
         provider=settings.primary_provider,
         ttl_seconds=settings.cache_ttl_seconds
     )
-    
+
     # 1. Attempt cache lookup: try primary provider first
     cached = cache_service.get(symbol, provider=settings.primary_provider)
     if cached:
@@ -110,7 +115,7 @@ def get_market_data(
 
     # 2. Cache miss -> Fetch from external API
     try:
-        snapshot = market_client.fetch_snapshot(symbol)
+        snapshot = await market_client.fetch_snapshot(symbol)
         # Cache under the provider that actually retrieved the data
         cache_service.set(snapshot, provider=snapshot.provider)
         return snapshot

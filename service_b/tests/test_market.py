@@ -1,8 +1,9 @@
+import asyncio
 import time
 import threading
 import pytest
 import requests
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, AsyncMock, PropertyMock, patch
 from service_b.app.services.market_data import (
     YFinanceProvider,
     EodhdProvider,
@@ -17,7 +18,7 @@ from service_b.app.schemas.market import MarketSnapshot
 # ==========================================
 
 @patch("service_b.app.services.market_data.yf.Ticker")
-def test_yfinance_provider_success(mock_ticker_class):
+async def test_yfinance_provider_success(mock_ticker_class):
     mock_ticker = MagicMock()
     mock_ticker.info = {
         "symbol": "AAPL",
@@ -32,17 +33,19 @@ def test_yfinance_provider_success(mock_ticker_class):
         "previousClose": 174.00
     }
     mock_ticker_class.return_value = mock_ticker
-    
+
     provider = YFinanceProvider(retries=3, delay_seconds=0.01)
-    snapshot = provider.fetch_snapshot("AAPL")
-    
+    snapshot = await provider.fetch_snapshot("AAPL")
+
     assert isinstance(snapshot, MarketSnapshot)
     assert snapshot.symbol == "AAPL"
     assert snapshot.price == 175.50
     mock_ticker_class.assert_called_once_with("AAPL")
 
+@patch("service_b.app.services.market_data.asyncio.sleep", new_callable=AsyncMock)
 @patch("service_b.app.services.market_data.yf.Ticker")
-def test_yfinance_provider_retry_success(mock_ticker_class):
+async def test_yfinance_provider_retry_success(mock_ticker_class, mock_sleep):
+    """Verifies that asyncio.sleep (not time.sleep) is used between retries."""
     mock_ticker = MagicMock()
     p = PropertyMock(side_effect=[
         Exception("Network connection failed"),
@@ -54,25 +57,28 @@ def test_yfinance_provider_retry_success(mock_ticker_class):
     ])
     type(mock_ticker).info = p
     mock_ticker_class.return_value = mock_ticker
-    
+
     provider = YFinanceProvider(retries=3, delay_seconds=0.01)
-    snapshot = provider.fetch_snapshot("AAPL")
-    
+    snapshot = await provider.fetch_snapshot("AAPL")
+
     assert snapshot.symbol == "AAPL"
     assert snapshot.price == 175.50
     assert p.call_count == 2
+    # asyncio.sleep must have been awaited exactly once (between attempt 1 and 2)
+    mock_sleep.assert_awaited_once_with(0.01)
 
+@patch("service_b.app.services.market_data.asyncio.sleep", new_callable=AsyncMock)
 @patch("service_b.app.services.market_data.yf.Ticker")
-def test_yfinance_provider_exhausted_retries(mock_ticker_class):
+async def test_yfinance_provider_exhausted_retries(mock_ticker_class, mock_sleep):
     mock_ticker = MagicMock()
     p = PropertyMock(side_effect=Exception("API offline"))
     type(mock_ticker).info = p
     mock_ticker_class.return_value = mock_ticker
-    
+
     provider = YFinanceProvider(retries=3, delay_seconds=0.01)
-    
+
     with pytest.raises(UpstreamAPIError, match="Failed to fetch market data for symbol MSFT after 3 attempts"):
-        provider.fetch_snapshot("MSFT")
+        await provider.fetch_snapshot("MSFT")
 
 
 # ==========================================
@@ -80,7 +86,7 @@ def test_yfinance_provider_exhausted_retries(mock_ticker_class):
 # ==========================================
 
 @patch("service_b.app.services.market_data.APIClient")
-def test_eodhd_provider_success(mock_client_class):
+async def test_eodhd_provider_success(mock_client_class):
     mock_client = MagicMock()
     mock_client.get_live_stock_prices.return_value = {
         "code": "AAPL.US",
@@ -93,10 +99,10 @@ def test_eodhd_provider_success(mock_client_class):
         "previousClose": 174.00
     }
     mock_client_class.return_value = mock_client
-    
+
     provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
-    snapshot = provider.fetch_snapshot("AAPL")
-    
+    snapshot = await provider.fetch_snapshot("AAPL")
+
     assert isinstance(snapshot, MarketSnapshot)
     assert snapshot.symbol == "AAPL"
     assert snapshot.name == "AAPL"
@@ -105,26 +111,26 @@ def test_eodhd_provider_success(mock_client_class):
     mock_client.get_live_stock_prices.assert_called_once_with(ticker="AAPL.US")
 
 @patch("service_b.app.services.market_data.APIClient")
-def test_eodhd_provider_symbol_normalization(mock_client_class):
+async def test_eodhd_provider_symbol_normalization(mock_client_class):
     mock_client = MagicMock()
     mock_client.get_live_stock_prices.return_value = {
         "code": "TEST",
         "close": 10.0
     }
     mock_client_class.return_value = mock_client
-    
+
     provider = EodhdProvider(api_key="fake_key", retries=1, delay_seconds=0.01)
-    
+
     # 1. Standard stock ticker
-    provider.fetch_snapshot("AAPL")
+    await provider.fetch_snapshot("AAPL")
     mock_client.get_live_stock_prices.assert_called_with(ticker="AAPL.US")
-    
+
     # 2. Crypto ticker
-    provider.fetch_snapshot("BTC-USD")
+    await provider.fetch_snapshot("BTC-USD")
     mock_client.get_live_stock_prices.assert_called_with(ticker="BTC-USD.CC")
-    
+
     # 3. Pre-formatted ticker
-    provider.fetch_snapshot("MSFT.US")
+    await provider.fetch_snapshot("MSFT.US")
     mock_client.get_live_stock_prices.assert_called_with(ticker="MSFT.US")
 
 
@@ -132,10 +138,10 @@ def test_eodhd_provider_symbol_normalization(mock_client_class):
 # FallbackProvider Tests
 # ==========================================
 
-def test_fallback_provider_primary_success():
+async def test_fallback_provider_primary_success():
     mock_primary = MagicMock()
     mock_fallback = MagicMock()
-    
+
     mock_snapshot = MarketSnapshot(
         symbol="AAPL",
         name="Apple Inc.",
@@ -143,20 +149,21 @@ def test_fallback_provider_primary_success():
         currency="USD",
         timestamp=time.time()
     )
-    mock_primary.fetch_snapshot.return_value = mock_snapshot
-    
-    provider = FallbackProvider(primary=mock_primary, fallback=mock_fallback)
-    snapshot = provider.fetch_snapshot("AAPL")
-    
-    assert snapshot == mock_snapshot
-    mock_primary.fetch_snapshot.assert_called_once_with("AAPL")
-    mock_fallback.fetch_snapshot.assert_not_called()
+    mock_primary.fetch_snapshot = AsyncMock(return_value=mock_snapshot)
+    mock_fallback.fetch_snapshot = AsyncMock()
 
-def test_fallback_provider_primary_fails_fallback_success():
+    provider = FallbackProvider(primary=mock_primary, fallback=mock_fallback)
+    snapshot = await provider.fetch_snapshot("AAPL")
+
+    assert snapshot == mock_snapshot
+    mock_primary.fetch_snapshot.assert_awaited_once_with("AAPL")
+    mock_fallback.fetch_snapshot.assert_not_awaited()
+
+async def test_fallback_provider_primary_fails_fallback_success():
     mock_primary = MagicMock()
     mock_fallback = MagicMock()
-    
-    mock_primary.fetch_snapshot.side_effect = Exception("Primary API offline")
+
+    mock_primary.fetch_snapshot = AsyncMock(side_effect=Exception("Primary API offline"))
     mock_snapshot = MarketSnapshot(
         symbol="AAPL",
         name="Apple Inc.",
@@ -164,26 +171,26 @@ def test_fallback_provider_primary_fails_fallback_success():
         currency="USD",
         timestamp=time.time()
     )
-    mock_fallback.fetch_snapshot.return_value = mock_snapshot
-    
-    provider = FallbackProvider(primary=mock_primary, fallback=mock_fallback)
-    snapshot = provider.fetch_snapshot("AAPL")
-    
-    assert snapshot == mock_snapshot
-    mock_primary.fetch_snapshot.assert_called_once_with("AAPL")
-    mock_fallback.fetch_snapshot.assert_called_once_with("AAPL")
+    mock_fallback.fetch_snapshot = AsyncMock(return_value=mock_snapshot)
 
-def test_fallback_provider_both_fail():
+    provider = FallbackProvider(primary=mock_primary, fallback=mock_fallback)
+    snapshot = await provider.fetch_snapshot("AAPL")
+
+    assert snapshot == mock_snapshot
+    mock_primary.fetch_snapshot.assert_awaited_once_with("AAPL")
+    mock_fallback.fetch_snapshot.assert_awaited_once_with("AAPL")
+
+async def test_fallback_provider_both_fail():
     mock_primary = MagicMock()
     mock_fallback = MagicMock()
-    
-    mock_primary.fetch_snapshot.side_effect = Exception("Primary offline")
-    mock_fallback.fetch_snapshot.side_effect = Exception("Fallback offline")
-    
+
+    mock_primary.fetch_snapshot = AsyncMock(side_effect=Exception("Primary offline"))
+    mock_fallback.fetch_snapshot = AsyncMock(side_effect=Exception("Fallback offline"))
+
     provider = FallbackProvider(primary=mock_primary, fallback=mock_fallback)
-    
+
     with pytest.raises(Exception, match="Fallback offline"):
-        provider.fetch_snapshot("AAPL")
+        await provider.fetch_snapshot("AAPL")
 
 
 # ==========================================
@@ -191,43 +198,45 @@ def test_fallback_provider_both_fail():
 # ==========================================
 
 @patch("service_b.app.services.market_data.yf.Ticker")
-def test_yfinance_provider_invalid_data(mock_ticker_class):
+async def test_yfinance_provider_invalid_data(mock_ticker_class):
     mock_ticker = MagicMock()
     mock_ticker.info = {}
     mock_ticker_class.return_value = mock_ticker
-    
+
     provider = YFinanceProvider(retries=1, delay_seconds=0.01)
     with pytest.raises(UpstreamAPIError, match="Upstream returned empty or invalid info dict"):
-        provider.fetch_snapshot("AAPL")
+        await provider.fetch_snapshot("AAPL")
 
 
 @patch("service_b.app.services.market_data.APIClient")
-def test_eodhd_provider_empty_data(mock_client_class):
+async def test_eodhd_provider_empty_data(mock_client_class):
     mock_client = MagicMock()
     mock_client.get_live_stock_prices.return_value = None
     mock_client_class.return_value = mock_client
-    
+
     provider = EodhdProvider(api_key="fake_key", retries=1, delay_seconds=0.01)
     with pytest.raises(UpstreamAPIError, match="EODHD returned empty or invalid data"):
-        provider.fetch_snapshot("AAPL")
+        await provider.fetch_snapshot("AAPL")
 
 
 @patch("service_b.app.services.market_data.APIClient")
-def test_eodhd_provider_missing_close_price(mock_client_class):
+async def test_eodhd_provider_missing_close_price(mock_client_class):
     mock_client = MagicMock()
     mock_client.get_live_stock_prices.return_value = {
         "code": "AAPL.US",
         "open": 174.50
     }
     mock_client_class.return_value = mock_client
-    
+
     provider = EodhdProvider(api_key="fake_key", retries=1, delay_seconds=0.01)
     with pytest.raises(UpstreamAPIError, match="Could not find close price in EODHD response"):
-        provider.fetch_snapshot("AAPL")
+        await provider.fetch_snapshot("AAPL")
 
 
+@patch("service_b.app.services.market_data.asyncio.sleep", new_callable=AsyncMock)
 @patch("service_b.app.services.market_data.APIClient")
-def test_eodhd_provider_retry_behavior(mock_client_class):
+async def test_eodhd_provider_retry_behavior(mock_client_class, mock_sleep):
+    """Verifies asyncio.sleep (not time.sleep) is awaited between retries."""
     mock_client = MagicMock()
     mock_client.get_live_stock_prices.side_effect = [
         Exception("Timeout"),
@@ -238,23 +247,25 @@ def test_eodhd_provider_retry_behavior(mock_client_class):
         }
     ]
     mock_client_class.return_value = mock_client
-    
+
     provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
-    snapshot = provider.fetch_snapshot("AAPL")
-    
+    snapshot = await provider.fetch_snapshot("AAPL")
+
     assert snapshot.price == 175.50
     assert mock_client.get_live_stock_prices.call_count == 3
+    assert mock_sleep.await_count == 2
 
 
+@patch("service_b.app.services.market_data.asyncio.sleep", new_callable=AsyncMock)
 @patch("service_b.app.services.market_data.APIClient")
-def test_eodhd_provider_exhausted_retries(mock_client_class):
+async def test_eodhd_provider_exhausted_retries(mock_client_class, mock_sleep):
     mock_client = MagicMock()
     mock_client.get_live_stock_prices.side_effect = Exception("EODHD offline")
     mock_client_class.return_value = mock_client
-    
+
     provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
     with pytest.raises(UpstreamAPIError, match="Failed to fetch market data from EODHD"):
-        provider.fetch_snapshot("AAPL")
+        await provider.fetch_snapshot("AAPL")
 
 
 # ==========================================
@@ -359,32 +370,32 @@ def test_circuit_breaker_half_open_transition_is_atomic():
 # ==========================================
 
 @patch("service_b.app.services.market_data.yf.Ticker")
-def test_yfinance_provider_fail_fast_on_client_error(mock_ticker_class):
+async def test_yfinance_provider_fail_fast_on_client_error(mock_ticker_class):
     mock_ticker = MagicMock()
     mock_ticker.info = {}  # Trigger ValueError -> client error
     mock_ticker_class.return_value = mock_ticker
-    
+
     provider = YFinanceProvider(retries=3, delay_seconds=0.01)
-    
+
     with pytest.raises(UpstreamAPIError) as exc_info:
-        provider.fetch_snapshot("INVALID")
-        
+        await provider.fetch_snapshot("INVALID")
+
     assert exc_info.value.is_client_error is True
     # Verify it failed on the very first attempt and did not retry
     assert mock_ticker_class.call_count == 1
 
 
 @patch("service_b.app.services.market_data.APIClient")
-def test_eodhd_provider_fail_fast_on_client_error(mock_client_class):
+async def test_eodhd_provider_fail_fast_on_client_error(mock_client_class):
     mock_client = MagicMock()
     mock_client.get_live_stock_prices.return_value = None  # Trigger ValueError -> client error
     mock_client_class.return_value = mock_client
-    
+
     provider = EodhdProvider(api_key="fake_key", retries=3, delay_seconds=0.01)
-    
+
     with pytest.raises(UpstreamAPIError) as exc_info:
-        provider.fetch_snapshot("INVALID")
-        
+        await provider.fetch_snapshot("INVALID")
+
     assert exc_info.value.is_client_error is True
     # Verify it failed on the very first attempt and did not retry
     assert mock_client.get_live_stock_prices.call_count == 1
@@ -416,13 +427,13 @@ def test_circuit_breaker_transitions():
     assert cb.allow_request() is True
 
 
-def test_fallback_provider_circuit_breaker_behavior():
+async def test_fallback_provider_circuit_breaker_behavior():
     mock_primary = MagicMock()
     mock_fallback = MagicMock()
-    
+
     # Setup primary to fail with a network error
-    mock_primary.fetch_snapshot.side_effect = Exception("Primary offline")
-    
+    mock_primary.fetch_snapshot = AsyncMock(side_effect=Exception("Primary offline"))
+
     # Setup fallback to succeed
     mock_snapshot = MarketSnapshot(
         symbol="AAPL",
@@ -431,8 +442,8 @@ def test_fallback_provider_circuit_breaker_behavior():
         currency="USD",
         timestamp=time.time()
     )
-    mock_fallback.fetch_snapshot.return_value = mock_snapshot
-    
+    mock_fallback.fetch_snapshot = AsyncMock(return_value=mock_snapshot)
+
     # Instantiate with a low threshold
     provider = FallbackProvider(
         primary=mock_primary,
@@ -440,24 +451,23 @@ def test_fallback_provider_circuit_breaker_behavior():
         failure_threshold=2,
         recovery_timeout=30.0
     )
-    
+
     # 1. First request: primary is tried, fails, fallback succeeds
-    res1 = provider.fetch_snapshot("AAPL")
+    res1 = await provider.fetch_snapshot("AAPL")
     assert res1 == mock_snapshot
-    assert mock_primary.fetch_snapshot.call_count == 1
-    
+    assert mock_primary.fetch_snapshot.await_count == 1
+
     # 2. Second request: primary is tried, fails, fallback succeeds, trips CB
-    res2 = provider.fetch_snapshot("AAPL")
+    res2 = await provider.fetch_snapshot("AAPL")
     assert res2 == mock_snapshot
-    assert mock_primary.fetch_snapshot.call_count == 2
-    
+    assert mock_primary.fetch_snapshot.await_count == 2
+
     # 3. Third request: CB is OPEN, primary is bypassed, fallback called directly
-    res3 = provider.fetch_snapshot("AAPL")
+    res3 = await provider.fetch_snapshot("AAPL")
     assert res3 == mock_snapshot
 
-
     # Primary call count remains at 2!
-    assert mock_primary.fetch_snapshot.call_count == 2
+    assert mock_primary.fetch_snapshot.await_count == 2
 
 
 # ==========================================

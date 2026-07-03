@@ -1,7 +1,7 @@
 import time
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from sqlmodel import SQLModel, create_engine, Session, select
 from service_b.app.main import app, get_db_session
 from service_b.app.config import settings
@@ -79,6 +79,7 @@ def test_get_market_data_cache_hit(mock_market_client, client, db_session):
     assert data["price"] == 150.0
     assert data["name"] == "Apple Inc."
     # The external market client should NOT have been called
+    mock_market_client.fetch_snapshot = AsyncMock()
     mock_market_client.fetch_snapshot.assert_not_called()
 
 @patch("service_b.app.main.market_client")
@@ -91,7 +92,7 @@ def test_get_market_data_cache_miss_success(mock_market_client, client, db_sessi
         currency="USD",
         timestamp=time.time()
     )
-    mock_market_client.fetch_snapshot.return_value = mock_snapshot
+    mock_market_client.fetch_snapshot = AsyncMock(return_value=mock_snapshot)
     
     response = client.get(
         "/internal/market-data?symbol=GOOG",
@@ -116,7 +117,7 @@ def test_get_market_data_cache_miss_success(mock_market_client, client, db_sessi
 @patch("service_b.app.main.market_client")
 def test_get_market_data_upstream_failure(mock_market_client, client):
     # Mock external client to raise an error
-    mock_market_client.fetch_snapshot.side_effect = UpstreamAPIError("Upstream service unavailable")
+    mock_market_client.fetch_snapshot = AsyncMock(side_effect=UpstreamAPIError("Upstream service unavailable"))
     
     response = client.get(
         "/internal/market-data?symbol=MSFT",
@@ -129,8 +130,10 @@ def test_get_market_data_upstream_failure(mock_market_client, client):
 
 @patch("service_b.app.main.market_client")
 def test_get_market_data_symbol_not_found(mock_market_client, client):
-    mock_market_client.fetch_snapshot.side_effect = UpstreamAPIError(
-        "Could not find price in raw ticker info", is_client_error=True
+    mock_market_client.fetch_snapshot = AsyncMock(
+        side_effect=UpstreamAPIError(
+            "Could not find price in raw ticker info", is_client_error=True
+        )
     )
     
     response = client.get(
@@ -218,6 +221,7 @@ def test_get_market_data_fallback_cache_hit(mock_market_client, client, db_sessi
         assert data["provider"] == "eodhd"
         
         # Verify that market client was NOT queried (it was a fallback cache hit)
+        mock_market_client.fetch_snapshot = AsyncMock()
         mock_market_client.fetch_snapshot.assert_not_called()
 
 
