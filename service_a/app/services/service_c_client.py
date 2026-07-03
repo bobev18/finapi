@@ -9,36 +9,49 @@ class UpstreamHTTPException(Exception):
 
 class ServiceCClient:
     """
-    HTTP client responsible for making authorized REST calls to Service C (Market Signal Service).
+    HTTP client responsible for making authorized REST calls to Service C
+    (Market Signal Service).
+
+    A single ``httpx.Client`` is created at construction time and reused
+    across all calls, enabling TCP connection pooling and keep-alive.
+    Call ``close()`` (or use the instance as a context manager) to release
+    the underlying connection pool when the application shuts down.
     """
-    def __init__(self, service_c_url: str, signal_key: str):
+    def __init__(self, service_c_url: str, signal_key: str, timeout: float = 5.0):
         self._service_c_url = service_c_url
-        self._signal_key = signal_key
+        # Build a persistent client once so every request reuses the same
+        # connection pool instead of paying for a new TCP + TLS handshake.
+        self._http_client = httpx.Client(
+            base_url=service_c_url,
+            headers={"Authorization": f"Bearer {signal_key}"},
+            timeout=timeout,
+        )
 
     def fetch_market_signal(self, symbol: str) -> dict:
         """
         Queries Service C for the rule-based market signal of a given symbol.
+        Reuses the persistent HTTP connection pool held on this instance.
         Propagates custom exceptions on HTTP or communication failures.
         """
-        url = f"{self._service_c_url}/internal/market-signal"
-        headers = {"Authorization": f"Bearer {self._signal_key}"}
-        params = {"symbol": symbol}
-        
         try:
-            # Establish client connection with a 5-second timeout
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(url, headers=headers, params=params)
-                
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    try:
-                        detail = response.json().get("detail", response.text)
-                    except Exception:
-                        detail = response.text
-                    raise UpstreamHTTPException(status_code=response.status_code, detail=detail)
+            response = self._http_client.get(
+                "/internal/market-signal",
+                params={"symbol": symbol},
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                try:
+                    detail = response.json().get("detail", response.text)
+                except Exception:
+                    detail = response.text
+                raise UpstreamHTTPException(status_code=response.status_code, detail=detail)
         except httpx.RequestError as e:
             raise Exception(f"Failed to communicate with Service C: {str(e)}")
+
+    def close(self) -> None:
+        """Release the underlying connection pool.  Call from the app lifespan."""
+        self._http_client.close()
 
 service_c_client = ServiceCClient(
     service_c_url=settings.service_c_url,

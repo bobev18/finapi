@@ -11,35 +11,47 @@ class UpstreamHTTPException(Exception):
 class ServiceBClient:
     """
     HTTP client responsible for making authorized REST calls to Service B.
+
+    A single ``httpx.Client`` is created at construction time and reused
+    across all calls, enabling TCP connection pooling and keep-alive.
+    Call ``close()`` (or use the instance as a context manager) to release
+    the underlying connection pool when the application shuts down.
     """
-    def __init__(self, service_b_url: str, internal_key: str):
+    def __init__(self, service_b_url: str, internal_key: str, timeout: float = 5.0):
         self._service_b_url = service_b_url
-        self._internal_key = internal_key
+        # Build a persistent client once so every request reuses the same
+        # connection pool instead of paying for a new TCP + TLS handshake.
+        self._http_client = httpx.Client(
+            base_url=service_b_url,
+            headers={"Authorization": f"Bearer {internal_key}"},
+            timeout=timeout,
+        )
 
     def fetch_market_data(self, symbol: str) -> MarketSnapshot:
         """
         Queries Service B for the market snapshot of a given symbol.
+        Reuses the persistent HTTP connection pool held on this instance.
         Propagates custom exceptions on HTTP or communication failures.
         """
-        url = f"{self._service_b_url}/internal/market-data"
-        headers = {"Authorization": f"Bearer {self._internal_key}"}
-        params = {"symbol": symbol}
-        
         try:
-            # Establish client connection with a 5-second timeout
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(url, headers=headers, params=params)
-                
-                if response.status_code == 200:
-                    return MarketSnapshot.model_validate(response.json())
-                else:
-                    try:
-                        detail = response.json().get("detail", response.text)
-                    except Exception:
-                        detail = response.text
-                    raise UpstreamHTTPException(status_code=response.status_code, detail=detail)
+            response = self._http_client.get(
+                "/internal/market-data",
+                params={"symbol": symbol},
+            )
+            if response.status_code == 200:
+                return MarketSnapshot.model_validate(response.json())
+            else:
+                try:
+                    detail = response.json().get("detail", response.text)
+                except Exception:
+                    detail = response.text
+                raise UpstreamHTTPException(status_code=response.status_code, detail=detail)
         except httpx.RequestError as e:
             raise Exception(f"Failed to communicate with Service B: {str(e)}")
+
+    def close(self) -> None:
+        """Release the underlying connection pool.  Call from the app lifespan."""
+        self._http_client.close()
 
 service_b_client = ServiceBClient(
     service_b_url=settings.service_b_url,

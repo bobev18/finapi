@@ -1,13 +1,21 @@
 import time
+from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, Depends, Query, Request, HTTPException, status
 from pydantic import BaseModel, Field
 from service_c.app.config import settings
 from service_c.app.services.service_b_client import service_b_client, UpstreamHTTPException
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Release shared HTTP connection pools on application shutdown."""
+    yield
+    service_b_client.close()
+
 app = FastAPI(
     title="Service C - Market Signal Service",
-    description="Internal service that derives rule-based market signals from snapshots fetched via Service B."
+    description="Internal service that derives rule-based market signals from snapshots fetched via Service B.",
+    lifespan=lifespan
 )
 
 class MarketSignalResponse(BaseModel):

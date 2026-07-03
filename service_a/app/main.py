@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Query, Request, HTTPException, status
 from service_a.app.config import settings
 from service_a.app.schemas.market import MarketSnapshot
@@ -7,9 +8,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Release shared HTTP connection pools on application shutdown."""
+    yield
+    service_b_client.close()
+    service_c_client.close()
+
 app = FastAPI(
     title="Service A - API Gateway / Backend",
-    description="Public entrypoint for client requests. Authenticates requests and queries Service B."
+    description="Public entrypoint for client requests. Authenticates requests and queries Service B.",
+    lifespan=lifespan
 )
 
 def verify_client_token(request: Request):
